@@ -1,0 +1,108 @@
+services:
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL — primary database
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: skyalert
+      POSTGRES_PASSWORD: skyalert
+      POSTGRES_DB: skyalert
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skyalert"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Redis — Celery broker and result backend
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Migration runner — runs `alembic upgrade head` once, then exits
+  # ---------------------------------------------------------------------------
+  migrate:
+    build: .
+    command: alembic upgrade head
+    environment:
+      DATABASE_URL: postgresql://skyalert:skyalert@db:5432/skyalert
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  # ---------------------------------------------------------------------------
+  # FastAPI — HTTP API server
+  # ---------------------------------------------------------------------------
+  api:
+    build: .
+    command: uvicorn backend.infrastructure.api.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://skyalert:skyalert@db:5432/skyalert
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - .:/app
+    working_dir: /app
+
+  # ---------------------------------------------------------------------------
+  # Celery worker — processes scrape and notify tasks
+  # ---------------------------------------------------------------------------
+  worker:
+    build: .
+    command: celery -A backend.infrastructure.tasks.celery_app.celery_app worker --loglevel=info
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://skyalert:skyalert@db:5432/skyalert
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - .:/app
+    working_dir: /app
+
+  # ---------------------------------------------------------------------------
+  # Celery beat — sends scheduled tasks (scrape every 5min, notify every 2min)
+  # ---------------------------------------------------------------------------
+  beat:
+    build: .
+    command: celery -A backend.infrastructure.tasks.celery_app.celery_app beat --loglevel=info
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://skyalert:skyalert@db:5432/skyalert
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - .:/app
+    working_dir: /app
+
+volumes:
+  postgres_data:
