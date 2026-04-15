@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SkyAlert — Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/app/css/custom.css" />
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+  <!-- ── Navbar ── -->
+  <nav class="bg-white border-b border-gray-200">
+    <div class="container mx-auto px-4 py-3 flex items-center justify-between">
+      <span class="text-xl font-bold text-blue-600 tracking-tight">✈ SkyAlert</span>
+      <a href="/app/search.html"
+         class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition">
+        + New Search
+      </a>
+    </div>
+  </nav>
+
+  <!-- ── Main ── -->
+  <main class="container mx-auto px-4 py-8 max-w-3xl">
+
+    <!-- User ID input (MVP: no auth, user enters their UUID) -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-6">
+      <label class="block text-sm font-medium text-gray-700 mb-1">Your User ID</label>
+      <div class="flex gap-2">
+        <input id="userId" type="text" placeholder="Paste your user UUID here"
+               class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        <button onclick="loadDashboard()"
+                class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition">
+          Load
+        </button>
+      </div>
+      <p id="userError" class="text-red-500 text-xs mt-1 hidden"></p>
+    </div>
+
+    <!-- Searches list -->
+    <section>
+      <h2 class="text-lg font-semibold text-gray-800 mb-3">Your Searches</h2>
+      <div id="searchList" class="space-y-4">
+        <p class="text-gray-400 text-sm">Enter your User ID above to load your searches.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ── Search card template (cloned by JS) ── -->
+  <template id="searchCardTpl">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 fade-in">
+      <div class="flex items-start justify-between">
+        <div>
+          <p class="text-base font-semibold text-gray-800 route"></p>
+          <p class="text-sm text-gray-500 dates"></p>
+          <p class="text-sm text-gray-500 threshold"></p>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="status-badge text-xs font-medium px-2 py-1 rounded-full"></span>
+          <button class="delete-btn text-gray-400 hover:text-red-500 transition" title="Deactivate">
+            <!-- trash icon -->
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zm-.894 7.553a1 1 0 111.788.894L9 12.236V15a1 1 0 11-2 0v-2.764l-.894-1.789a1 1 0 010-.894zM7 9a1 1 0 012 0v1a1 1 0 01-2 0V9z" clip-rule="evenodd" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Alerts for this search -->
+      <div class="alerts-section mt-4">
+        <p class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Recent Alerts</p>
+        <div class="alerts-list space-y-2">
+          <p class="text-gray-400 text-xs">No alerts yet.</p>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <!-- ── Alert row template ── -->
+  <template id="alertRowTpl">
+    <a href="#" class="alert-link block">
+      <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2 hover:bg-blue-50 transition fade-in">
+        <div>
+          <p class="text-sm font-medium text-gray-800 alert-price"></p>
+          <p class="text-xs text-gray-500 alert-drop"></p>
+        </div>
+        <span class="alert-badge text-xs font-medium px-2 py-0.5 rounded-full"></span>
+      </div>
+    </a>
+  </template>
+
+  <script type="module">
+    import { getUserSearches, getSearchAlerts, deleteSearch } from "/app/js/api.js";
+
+    const STATUS_ACTIVE   = "bg-green-100 text-green-700";
+    const STATUS_INACTIVE = "bg-gray-100 text-gray-500";
+
+    /**
+     * Load and render the dashboard for the given user ID.
+     */
+    window.loadDashboard = async function () {
+      const userId = document.getElementById("userId").value.trim();
+      const errorEl = document.getElementById("userError");
+      const listEl  = document.getElementById("searchList");
+
+      errorEl.classList.add("hidden");
+      listEl.innerHTML = '<p class="text-gray-400 text-sm">Loading…</p>';
+
+      if (!userId) {
+        errorEl.textContent = "Please enter a valid User ID.";
+        errorEl.classList.remove("hidden");
+        listEl.innerHTML = "";
+        return;
+      }
+
+      // Save for other pages
+      localStorage.setItem("skyalert_user_id", userId);
+
+      try {
+        const searches = await getUserSearches(userId);
+        listEl.innerHTML = "";
+
+        if (!searches.length) {
+          listEl.innerHTML = '<p class="text-gray-400 text-sm">No searches yet. Create one!</p>';
+          return;
+        }
+
+        for (const s of searches) {
+          const card = buildSearchCard(s);
+          listEl.appendChild(card);
+          loadAlerts(s.id, card.querySelector(".alerts-list"));
+        }
+      } catch (err) {
+        listEl.innerHTML = `<p class="text-red-500 text-sm">${err.message}</p>`;
+      }
+    };
+
+    /**
+     * Build a search card DOM node from a SearchResponse object.
+     * @param {object} s
+     * @returns {HTMLElement}
+     */
+    function buildSearchCard(s) {
+      const tpl  = document.getElementById("searchCardTpl");
+      const node = tpl.content.cloneNode(true);
+      const card = node.querySelector("div");
+
+      card.querySelector(".route").textContent =
+        `${s.origin} → ${s.destination}`;
+
+      card.querySelector(".dates").textContent =
+        s.return_date
+          ? `${s.departure_date} — ${s.return_date}`
+          : `${s.departure_date} (one-way)`;
+
+      card.querySelector(".threshold").textContent =
+        `Alert threshold: ${s.threshold_pct}% drop`;
+
+      const badge = card.querySelector(".status-badge");
+      if (s.is_active) {
+        badge.textContent = "Active";
+        badge.className += ` ${STATUS_ACTIVE}`;
+      } else {
+        badge.textContent = "Inactive";
+        badge.className += ` ${STATUS_INACTIVE}`;
+      }
+
+      card.querySelector(".delete-btn").addEventListener("click", async () => {
+        if (!confirm("Deactivate this search?")) return;
+        try {
+          await deleteSearch(s.id);
+          card.remove();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      return card;
+    }
+
+    /**
+     * Fetch and render alerts into the alerts-list container of a card.
+     * @param {string} searchId
+     * @param {HTMLElement} container
+     */
+    async function loadAlerts(searchId, container) {
+      try {
+        const alerts = await getSearchAlerts(searchId);
+        if (!alerts.length) return;
+        container.innerHTML = "";
+        for (const a of alerts.slice(0, 5)) {
+          container.appendChild(buildAlertRow(a));
+        }
+      } catch {
+        // Silently skip — alerts are non-critical on the dashboard
+      }
+    }
+
+    /**
+     * Build an alert row DOM node from an AlertResponse object.
+     * @param {object} a
+     * @returns {HTMLElement}
+     */
+    function buildAlertRow(a) {
+      const tpl  = document.getElementById("alertRowTpl");
+      const node = tpl.content.cloneNode(true);
+      const row  = node.querySelector("a");
+
+      row.href = `/app/alert.html?id=${a.id}`;
+      row.querySelector(".alert-price").textContent =
+        `${a.flight.currency_code} ${a.current_price.toFixed(2)}`;
+      row.querySelector(".alert-drop").textContent =
+        `${a.drop_pct.toFixed(1)}% below avg (${a.flight.airline})`;
+
+      const badge = row.querySelector(".alert-badge");
+      badge.textContent = a.status;
+      badge.className += ` badge-${a.status}`;
+
+      return row;
+    }
+
+    // Auto-load if user ID is saved
+    const saved = localStorage.getItem("skyalert_user_id");
+    if (saved) {
+      document.getElementById("userId").value = saved;
+      window.loadDashboard();
+    }
+  </script>
+
+</body>
+</html>

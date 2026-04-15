@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SkyAlert — Alert Detail</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/app/css/custom.css" />
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+  <!-- ── Navbar ── -->
+  <nav class="bg-white border-b border-gray-200">
+    <div class="container mx-auto px-4 py-3 flex items-center gap-3">
+      <a href="/app/index.html" class="text-gray-400 hover:text-gray-600 transition">← Dashboard</a>
+      <span class="text-xl font-bold text-blue-600 tracking-tight">✈ SkyAlert</span>
+    </div>
+  </nav>
+
+  <!-- ── Main ── -->
+  <main class="container mx-auto px-4 py-10 max-w-lg">
+
+    <!-- Loading state -->
+    <div id="loading" class="text-center text-gray-400 py-16">Loading alert…</div>
+
+    <!-- Error state -->
+    <p id="error" class="text-red-500 text-sm text-center hidden"></p>
+
+    <!-- Alert card (hidden until loaded) -->
+    <div id="alertCard" class="hidden fade-in">
+
+      <!-- Header -->
+      <div class="bg-blue-600 rounded-t-xl px-6 py-5 text-white">
+        <p class="text-sm font-medium opacity-80 mb-1">Price Drop Detected</p>
+        <h1 class="text-3xl font-bold route"></h1>
+        <p class="text-sm opacity-80 mt-1 airline-date"></p>
+      </div>
+
+      <!-- Price section -->
+      <div class="bg-white border-x border-gray-200 px-6 py-5">
+        <div class="grid grid-cols-3 gap-4 text-center">
+          <div>
+            <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Current</p>
+            <p class="text-2xl font-bold text-green-600 current-price"></p>
+          </div>
+          <div>
+            <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Avg (7d)</p>
+            <p class="text-2xl font-bold text-gray-700 avg-price"></p>
+          </div>
+          <div>
+            <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Drop</p>
+            <p class="text-2xl font-bold text-blue-600 drop-pct"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Flight details -->
+      <div class="bg-white border-x border-t border-gray-200 px-6 py-4">
+        <p class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Flight Details</p>
+        <div class="space-y-2 text-sm text-gray-700">
+          <div class="flex justify-between">
+            <span class="text-gray-400">Airline</span>
+            <span class="font-medium airline"></span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-gray-400">Departure</span>
+            <span class="font-medium departure-date"></span>
+          </div>
+          <div class="flex justify-between return-row">
+            <span class="text-gray-400">Return</span>
+            <span class="font-medium return-date"></span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-gray-400">Duration</span>
+            <span class="font-medium duration"></span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-gray-400">Stops</span>
+            <span class="font-medium stops"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Status + actions -->
+      <div class="bg-white border border-gray-200 rounded-b-xl px-6 py-5 space-y-4">
+
+        <div class="flex items-center justify-between">
+          <span class="text-sm text-gray-500">Status</span>
+          <span id="statusBadge" class="text-xs font-medium px-3 py-1 rounded-full"></span>
+        </div>
+
+        <!-- Action buttons — shown only when alert is SENT -->
+        <div id="actions" class="hidden space-y-3">
+          <a id="bookLink" href="#" target="_blank" rel="noopener"
+             class="block w-full text-center bg-green-600 hover:bg-green-700 text-white font-semibold py-2.5 rounded-lg transition">
+            View on Google Flights ↗
+          </a>
+          <button id="confirmBtn"
+                  class="w-full border border-blue-600 text-blue-600 hover:bg-blue-50 font-semibold py-2.5 rounded-lg transition">
+            Confirm — I'm interested
+          </button>
+          <button id="buyBtn"
+                  class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg transition">
+            Confirm + Auto Purchase
+          </button>
+        </div>
+
+        <!-- Confirmed state message -->
+        <div id="confirmedMsg" class="hidden text-center py-2">
+          <p class="text-green-700 font-medium text-sm">✓ Alert confirmed. Good luck with your trip!</p>
+        </div>
+
+        <!-- Error on confirm -->
+        <p id="confirmError" class="text-red-500 text-xs hidden"></p>
+
+      </div>
+
+    </div>
+  </main>
+
+  <script type="module">
+    import { getAlert, confirmAlert } from "/app/js/api.js";
+
+    const params  = new URLSearchParams(window.location.search);
+    const alertId = params.get("id");
+    const userId  = localStorage.getItem("skyalert_user_id");
+
+    const loadingEl     = document.getElementById("loading");
+    const errorEl       = document.getElementById("error");
+    const cardEl        = document.getElementById("alertCard");
+    const actionsEl     = document.getElementById("actions");
+    const confirmedEl   = document.getElementById("confirmedMsg");
+    const confirmErrEl  = document.getElementById("confirmError");
+    const statusBadge   = document.getElementById("statusBadge");
+
+    /**
+     * Format minutes as "Xhr Ymin".
+     * @param {number} mins
+     * @returns {string}
+     */
+    function fmtDuration(mins) {
+      return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+    }
+
+    /**
+     * Render the full alert card from an AlertResponse.
+     * @param {object} a
+     */
+    function renderAlert(a) {
+      const f = a.flight;
+
+      cardEl.querySelector(".route").textContent    = `${f.origin} → ${f.destination}`;
+      cardEl.querySelector(".airline-date").textContent =
+        `${f.airline} · ${f.departure_date}`;
+
+      cardEl.querySelector(".current-price").textContent =
+        `${f.currency_code} ${a.current_price.toFixed(2)}`;
+      cardEl.querySelector(".avg-price").textContent =
+        `${f.currency_code} ${a.historical_avg.toFixed(2)}`;
+      cardEl.querySelector(".drop-pct").textContent = `${a.drop_pct.toFixed(1)}%`;
+
+      cardEl.querySelector(".airline").textContent       = f.airline;
+      cardEl.querySelector(".departure-date").textContent = f.departure_date;
+      cardEl.querySelector(".duration").textContent      = fmtDuration(f.duration_minutes);
+      cardEl.querySelector(".stops").textContent         =
+        f.stops === 0 ? "Nonstop" : `${f.stops} stop${f.stops > 1 ? "s" : ""}`;
+
+      if (f.return_date) {
+        cardEl.querySelector(".return-date").textContent = f.return_date;
+      } else {
+        cardEl.querySelector(".return-row").style.display = "none";
+      }
+
+      // Status badge
+      statusBadge.textContent = a.status;
+      statusBadge.className += ` badge-${a.status}`;
+
+      // Show actions only if SENT and user ID is known
+      if (a.status === "sent" && userId) {
+        actionsEl.classList.remove("hidden");
+        document.getElementById("bookLink").href = f.url;
+      }
+
+      if (a.status === "confirmed") {
+        confirmedEl.classList.remove("hidden");
+      }
+
+      loadingEl.classList.add("hidden");
+      cardEl.classList.remove("hidden");
+    }
+
+    /**
+     * Handle a confirm/buy button click.
+     * @param {boolean} triggerPurchase
+     */
+    async function handleConfirm(triggerPurchase) {
+      confirmErrEl.classList.add("hidden");
+      const btn = triggerPurchase
+        ? document.getElementById("buyBtn")
+        : document.getElementById("confirmBtn");
+
+      btn.disabled = true;
+      btn.textContent = "Processing…";
+
+      try {
+        await confirmAlert(alertId, userId, triggerPurchase);
+        actionsEl.classList.add("hidden");
+        confirmedEl.classList.remove("hidden");
+        statusBadge.textContent = "confirmed";
+        statusBadge.className = "text-xs font-medium px-3 py-1 rounded-full badge-confirmed";
+      } catch (err) {
+        confirmErrEl.textContent = err.message;
+        confirmErrEl.classList.remove("hidden");
+        btn.disabled = false;
+        btn.textContent = triggerPurchase ? "Confirm + Auto Purchase" : "Confirm — I'm interested";
+      }
+    }
+
+    document.getElementById("confirmBtn").addEventListener("click", () => handleConfirm(false));
+    document.getElementById("buyBtn").addEventListener("click",     () => handleConfirm(true));
+
+    // Load alert on page open
+    if (!alertId) {
+      loadingEl.textContent = "";
+      errorEl.textContent = "No alert ID provided.";
+      errorEl.classList.remove("hidden");
+    } else {
+      try {
+        const alert = await getAlert(alertId);
+        renderAlert(alert);
+      } catch (err) {
+        loadingEl.classList.add("hidden");
+        errorEl.textContent = err.message;
+        errorEl.classList.remove("hidden");
+      }
+    }
+  </script>
+
+</body>
+</html>

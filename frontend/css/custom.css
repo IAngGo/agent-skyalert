@@ -1,0 +1,21 @@
+/*
+ * custom.css — Only styles that Tailwind utilities cannot express.
+ * Keep this file minimal. Prefer Tailwind classes in HTML.
+ */
+
+/* Smooth fade-in for dynamically rendered cards */
+.fade-in {
+  animation: fadeIn 0.2s ease-in;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Status badge colors not easily expressed as arbitrary Tailwind values */
+.badge-pending   { background-color: #fef3c7; color: #92400e; }
+.badge-sent      { background-color: #dbeafe; color: #1e40af; }
+.badge-confirmed { background-color: #d1fae5; color: #065f46; }
+.badge-expired   { background-color: #f3f4f6; color: #6b7280; }
+.badge-failed    { background-color: #fee2e2; color: #991b1b; }

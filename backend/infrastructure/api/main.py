@@ -6,7 +6,10 @@ This is the entry point for uvicorn:
     uvicorn backend.infrastructure.api.main:app --reload
 """
 
+import os
+
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from backend.application.exceptions import SkyAlertError
 from backend.infrastructure.api.exception_handlers import (
@@ -39,6 +42,12 @@ def create_app() -> FastAPI:
     app.include_router(users.router)
     app.include_router(searches.router)
     app.include_router(alerts.router)
+
+    # Serve the frontend as static files under /app
+    frontend_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "frontend")
+    frontend_dir = os.path.abspath(frontend_dir)
+    if os.path.isdir(frontend_dir):
+        app.mount("/app", StaticFiles(directory=frontend_dir, html=True), name="frontend")
 
     @app.get("/health", tags=["meta"])
     def health() -> dict:

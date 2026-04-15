@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SkyAlert — New Search</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/app/css/custom.css" />
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+  <!-- ── Navbar ── -->
+  <nav class="bg-white border-b border-gray-200">
+    <div class="container mx-auto px-4 py-3 flex items-center gap-3">
+      <a href="/app/index.html" class="text-gray-400 hover:text-gray-600 transition">
+        ← Back
+      </a>
+      <span class="text-xl font-bold text-blue-600 tracking-tight">✈ SkyAlert</span>
+    </div>
+  </nav>
+
+  <!-- ── Main ── -->
+  <main class="container mx-auto px-4 py-10 max-w-lg">
+
+    <h1 class="text-2xl font-bold text-gray-800 mb-1">New Flight Search</h1>
+    <p class="text-sm text-gray-500 mb-6">
+      SkyAlert will check this route every 5 minutes and alert you when the price drops.
+    </p>
+
+    <form id="searchForm" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-5">
+
+      <!-- Route -->
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">From (IATA)</label>
+          <input id="origin" type="text" maxlength="3" placeholder="e.g. JFK"
+                 class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-blue-500"
+                 required />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">To (IATA)</label>
+          <input id="destination" type="text" maxlength="3" placeholder="e.g. LHR"
+                 class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-blue-500"
+                 required />
+        </div>
+      </div>
+
+      <!-- Trip type -->
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Trip type</label>
+        <select id="tripType"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <option value="round_trip">Round trip</option>
+          <option value="one_way">One way</option>
+        </select>
+      </div>
+
+      <!-- Dates -->
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Departure date</label>
+          <input id="departureDate" type="date"
+                 class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                 required />
+        </div>
+        <div id="returnDateWrapper">
+          <label class="block text-sm font-medium text-gray-700 mb-1">Return date</label>
+          <input id="returnDate" type="date"
+                 class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+      </div>
+
+      <!-- Threshold -->
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">
+          Alert threshold
+          <span class="font-normal text-gray-400 ml-1">— alert me when price drops more than:</span>
+        </label>
+        <div class="flex items-center gap-2">
+          <input id="threshold" type="number" min="1" max="99" value="10"
+                 class="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                 required />
+          <span class="text-sm text-gray-600">% below historical average</span>
+        </div>
+      </div>
+
+      <!-- Auto purchase -->
+      <div class="flex items-center gap-3">
+        <input id="autoPurchase" type="checkbox"
+               class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500" />
+        <label for="autoPurchase" class="text-sm text-gray-700">
+          Auto-purchase when I confirm an alert
+        </label>
+      </div>
+
+      <!-- User ID (pre-filled from localStorage) -->
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Your User ID</label>
+        <input id="userId" type="text" placeholder="Paste your user UUID"
+               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+               required />
+      </div>
+
+      <!-- Error -->
+      <p id="formError" class="text-red-500 text-sm hidden"></p>
+
+      <!-- Submit -->
+      <button type="submit"
+              class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg transition disabled:opacity-50">
+        Start Monitoring
+      </button>
+
+    </form>
+  </main>
+
+  <script type="module">
+    import { createSearch } from "/app/js/api.js";
+
+    // Pre-fill user ID from storage
+    const saved = localStorage.getItem("skyalert_user_id");
+    if (saved) document.getElementById("userId").value = saved;
+
+    // Show/hide return date based on trip type
+    const tripTypeEl = document.getElementById("tripType");
+    const returnWrapper = document.getElementById("returnDateWrapper");
+
+    tripTypeEl.addEventListener("change", () => {
+      const isRound = tripTypeEl.value === "round_trip";
+      returnWrapper.style.display = isRound ? "" : "none";
+      document.getElementById("returnDate").required = isRound;
+    });
+
+    // Set today as minimum date for both date inputs
+    const today = new Date().toISOString().split("T")[0];
+    document.getElementById("departureDate").min = today;
+    document.getElementById("returnDate").min = today;
+
+    document.getElementById("searchForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn      = e.target.querySelector("button[type=submit]");
+      const errorEl  = document.getElementById("formError");
+
+      errorEl.classList.add("hidden");
+      btn.disabled = true;
+      btn.textContent = "Saving…";
+
+      const tripType = tripTypeEl.value;
+      const payload = {
+        user_id:        document.getElementById("userId").value.trim(),
+        origin:         document.getElementById("origin").value.trim().toUpperCase(),
+        destination:    document.getElementById("destination").value.trim().toUpperCase(),
+        departure_date: document.getElementById("departureDate").value,
+        return_date:    tripType === "round_trip"
+                          ? document.getElementById("returnDate").value || null
+                          : null,
+        trip_type:      tripType,
+        threshold_pct:  parseFloat(document.getElementById("threshold").value),
+        auto_purchase:  document.getElementById("autoPurchase").checked,
+      };
+
+      // Save user ID for other pages
+      localStorage.setItem("skyalert_user_id", payload.user_id);
+
+      try {
+        await createSearch(payload);
+        window.location.href = "/app/index.html";
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.classList.remove("hidden");
+        btn.disabled = false;
+        btn.textContent = "Start Monitoring";
+      }
+    });
+  </script>
+
+</body>
+</html>
