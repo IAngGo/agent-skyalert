@@ -1,0 +1,23 @@
+# Web framework
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic[email]==2.8.2
+
+# Database
+sqlalchemy==2.0.35
+psycopg2-binary==2.9.9
+alembic==1.13.3
+
+# Task queue
+celery==5.4.0
+redis==5.0.8
+
+# Scraping
+playwright==1.47.0
+
+# Notifications
+sendgrid==6.11.0
+twilio==9.3.3
+
+# Environment
+python-dotenv==1.0.1
