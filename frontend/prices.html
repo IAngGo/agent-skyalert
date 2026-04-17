@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SkyAlert — Price History</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <link rel="stylesheet" href="/app/css/custom.css" />
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+  <!-- ── Navbar ── -->
+  <nav class="bg-white border-b border-gray-200">
+    <div class="container mx-auto px-4 py-3 flex items-center justify-between">
+      <a href="/app/index.html" class="text-xl font-bold text-blue-600 tracking-tight">✈ SkyAlert</a>
+      <a href="/app/index.html" class="text-sm text-gray-500 hover:text-gray-800 transition">
+        ← Back to dashboard
+      </a>
+    </div>
+  </nav>
+
+  <!-- ── Main ── -->
+  <main class="container mx-auto px-4 py-8 max-w-5xl">
+
+    <!-- Route header (populated by JS) -->
+    <div id="routeHeader" class="mb-6">
+      <div class="h-8 w-48 bg-gray-200 rounded animate-pulse"></div>
+      <div class="h-4 w-64 bg-gray-100 rounded animate-pulse mt-2"></div>
+    </div>
+
+    <!-- Error state -->
+    <div id="errorMsg" class="hidden bg-red-50 border border-red-200 rounded-xl p-5 text-red-600 text-sm mb-6"></div>
+
+    <!-- Chart card -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mb-6 fade-in">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-base font-semibold text-gray-800">Price over time</h2>
+        <div id="legend" class="flex flex-wrap gap-3 text-xs"></div>
+      </div>
+      <div class="relative" style="height: 320px;">
+        <canvas id="priceChart"></canvas>
+        <div id="chartPlaceholder" class="absolute inset-0 flex items-center justify-center text-gray-400 text-sm">
+          Loading price data…
+        </div>
+      </div>
+    </div>
+
+    <!-- Latest prices table -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 fade-in">
+      <h2 class="text-base font-semibold text-gray-800 mb-4">Latest prices by airline</h2>
+      <div id="latestTable">
+        <div class="h-4 w-full bg-gray-100 rounded animate-pulse mb-2"></div>
+        <div class="h-4 w-3/4 bg-gray-100 rounded animate-pulse mb-2"></div>
+        <div class="h-4 w-5/6 bg-gray-100 rounded animate-pulse"></div>
+      </div>
+    </div>
+
+  </main>
+
+  <script type="module">
+    import { getSearch, getPriceHistory } from "/app/js/api.js";
+
+    // ── Colour palette for airlines ──────────────────────────────────────
+    const PALETTE = [
+      "#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6",
+      "#06b6d4", "#f97316", "#84cc16", "#ec4899", "#6366f1",
+    ];
+
+    const params   = new URLSearchParams(location.search);
+    const searchId = params.get("id");
+
+    if (!searchId) {
+      document.getElementById("errorMsg").textContent = "No search ID in URL.";
+      document.getElementById("errorMsg").classList.remove("hidden");
+    } else {
+      loadPage(searchId);
+    }
+
+    async function loadPage(id) {
+      try {
+        const [search, history] = await Promise.all([
+          getSearch(id),
+          getPriceHistory(id),
+        ]);
+
+        renderHeader(search);
+
+        if (!history.length) {
+          document.getElementById("chartPlaceholder").textContent =
+            "No price data yet — check back after the first scrape.";
+          document.getElementById("latestTable").innerHTML =
+            '<p class="text-gray-400 text-sm">No data yet.</p>';
+          return;
+        }
+
+        renderChart(history);
+        renderLatestTable(history);
+      } catch (err) {
+        const el = document.getElementById("errorMsg");
+        el.textContent = err.message;
+        el.classList.remove("hidden");
+      }
+    }
+
+    function renderHeader(search) {
+      const dates = search.return_date
+        ? `${search.departure_date} — ${search.return_date}`
+        : `${search.departure_date} (one-way)`;
+
+      document.getElementById("routeHeader").innerHTML = `
+        <h1 class="text-2xl font-bold text-gray-900">
+          ${search.origin} → ${search.destination}
+        </h1>
+        <p class="text-gray-500 text-sm mt-1">${dates} · Alert threshold: ${search.threshold_pct}%</p>
+      `;
+      document.title = `SkyAlert — ${search.origin} → ${search.destination}`;
+    }
+
+    function renderChart(history) {
+      document.getElementById("chartPlaceholder").remove();
+
+      // Group data points by airline
+      const airlineMap = {};
+      for (const point of history) {
+        if (!airlineMap[point.airline]) airlineMap[point.airline] = [];
+        airlineMap[point.airline].push({
+          x: new Date(point.scraped_at),
+          y: point.price,
+        });
+      }
+
+      const airlines = Object.keys(airlineMap).sort();
+      const legendEl = document.getElementById("legend");
+
+      const datasets = airlines.map((airline, i) => {
+        const color = PALETTE[i % PALETTE.length];
+
+        // Legend dot
+        const dot = document.createElement("span");
+        dot.className = "flex items-center gap-1";
+        dot.innerHTML = `
+          <span style="background:${color}" class="w-2.5 h-2.5 rounded-full inline-block"></span>
+          <span class="text-gray-600">${airline}</span>
+        `;
+        legendEl.appendChild(dot);
+
+        return {
+          label: airline,
+          data: airlineMap[airline],
+          borderColor: color,
+          backgroundColor: color + "22",
+          pointBackgroundColor: color,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          borderWidth: 2,
+          tension: 0.3,
+          fill: false,
+          showLine: true,
+        };
+      });
+
+      const ctx = document.getElementById("priceChart").getContext("2d");
+      new Chart(ctx, {
+        type: "scatter",
+        data: { datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "nearest", intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (ctx) =>
+                  `${ctx.dataset.label}: $${ctx.parsed.y.toFixed(0)}`,
+                title: (items) => {
+                  const d = new Date(items[0].parsed.x);
+                  return d.toLocaleString("en-US", {
+                    month: "short", day: "numeric",
+                    hour: "2-digit", minute: "2-digit",
+                  });
+                },
+              },
+            },
+          },
+          scales: {
+            x: {
+              type: "time",
+              time: {
+                tooltipFormat: "MMM d, HH:mm",
+                displayFormats: { hour: "MMM d HH:mm", day: "MMM d" },
+              },
+              grid: { color: "#f3f4f6" },
+              ticks: { color: "#9ca3af", font: { size: 11 } },
+            },
+            y: {
+              beginAtZero: false,
+              grid: { color: "#f3f4f6" },
+              ticks: {
+                color: "#9ca3af",
+                font: { size: 11 },
+                callback: (v) => "$" + v.toLocaleString(),
+              },
+            },
+          },
+        },
+      });
+    }
+
+    function renderLatestTable(history) {
+      // Find the latest price per airline
+      const latest = {};
+      const prev   = {};
+
+      for (const point of history) {
+        if (!latest[point.airline]) {
+          latest[point.airline] = point;
+        } else {
+          // history is oldest→newest, so later entries override
+          prev[point.airline]   = latest[point.airline];
+          latest[point.airline] = point;
+        }
+      }
+
+      const airlines = Object.keys(latest).sort(
+        (a, b) => latest[a].price - latest[b].price
+      );
+
+      const rows = airlines.map((airline, i) => {
+        const cur  = latest[airline].price;
+        const old  = prev[airline]?.price;
+        let trend  = "";
+        if (old !== undefined) {
+          const diff = cur - old;
+          if (diff < -0.5) trend = `<span class="text-green-600 font-medium">↓ $${Math.abs(diff).toFixed(0)}</span>`;
+          else if (diff > 0.5) trend = `<span class="text-red-500 font-medium">↑ $${diff.toFixed(0)}</span>`;
+          else trend = `<span class="text-gray-400">—</span>`;
+        }
+
+        const color = PALETTE[
+          Object.keys(latest).sort().indexOf(airline) % PALETTE.length
+        ];
+        const badge = i === 0
+          ? '<span class="ml-2 text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">cheapest</span>'
+          : "";
+
+        return `
+          <tr class="border-t border-gray-100">
+            <td class="py-2.5 pr-4">
+              <span class="inline-flex items-center gap-2">
+                <span style="background:${color}" class="w-2 h-2 rounded-full flex-shrink-0"></span>
+                <span class="text-sm font-medium text-gray-800">${airline}</span>
+                ${badge}
+              </span>
+            </td>
+            <td class="py-2.5 pr-4 text-sm text-gray-700 font-mono">
+              $${cur.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            </td>
+            <td class="py-2.5 text-sm">${trend}</td>
+          </tr>
+        `;
+      }).join("");
+
+      document.getElementById("latestTable").innerHTML = `
+        <table class="w-full">
+          <thead>
+            <tr class="text-xs text-gray-400 uppercase tracking-wide">
+              <th class="text-left pb-2 pr-4">Airline</th>
+              <th class="text-left pb-2 pr-4">Latest price</th>
+              <th class="text-left pb-2">Change</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+    }
+  </script>
+
+</body>
+</html>

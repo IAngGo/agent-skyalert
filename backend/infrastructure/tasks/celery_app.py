@@ -48,6 +48,7 @@ celery_app.conf.update(
     enable_utc=True,
     task_track_started=True,
     worker_prefetch_multiplier=1,  # one task at a time per worker for scraping
+    broker_connection_retry_on_startup=True,
 )
 
 celery_app.conf.beat_schedule = {

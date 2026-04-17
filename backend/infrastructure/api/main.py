@@ -10,6 +10,7 @@ import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.application.exceptions import SkyAlertError
@@ -58,6 +59,11 @@ def create_app() -> FastAPI:
     frontend_dir = os.path.abspath(frontend_dir)
     if os.path.isdir(frontend_dir):
         app.mount("/app", StaticFiles(directory=frontend_dir, html=True), name="frontend")
+
+    @app.get("/", include_in_schema=False)
+    def root() -> RedirectResponse:
+        """Redirect root to the landing page."""
+        return RedirectResponse(url="/app/landing.html")
 
     @app.get("/health", tags=["meta"])
     def health() -> dict:

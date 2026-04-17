@@ -128,6 +128,7 @@ def price_history_to_domain(model: PriceHistoryModel) -> PriceHistory:
         price=model.price,
         currency_code=model.currency_code,
         scraped_at=model.scraped_at,
+        airline=model.airline,
     )
 
 
@@ -147,6 +148,7 @@ def price_history_to_model(entity: PriceHistory) -> PriceHistoryModel:
         price=entity.price,
         currency_code=entity.currency_code,
         scraped_at=entity.scraped_at,
+        airline=entity.airline,
     )
 
 

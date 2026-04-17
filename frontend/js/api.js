@@ -54,6 +54,15 @@ export async function getUser(userId) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Fetch a search by ID.
+ * @param {string} searchId
+ * @returns {Promise<object>} SearchResponse
+ */
+export async function getSearch(searchId) {
+  return request(`/searches/${searchId}`);
+}
+
+/**
  * Create a new flight price monitoring search.
  * @param {object} data  CreateSearchRequest fields
  * @returns {Promise<object>} SearchResponse
@@ -83,6 +92,16 @@ export async function deleteSearch(searchId) {
 // ---------------------------------------------------------------------------
 // Alerts
 // ---------------------------------------------------------------------------
+
+/**
+ * Fetch the price time series for a search.
+ * @param {string} searchId
+ * @param {number} [limit=500]
+ * @returns {Promise<object[]>} PriceHistoryPointResponse[]
+ */
+export async function getPriceHistory(searchId, limit = 500) {
+  return request(`/searches/${searchId}/price-history?limit=${limit}`);
+}
 
 /**
  * Fetch all alerts for a search.

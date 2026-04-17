@@ -72,6 +72,7 @@ class PriceHistoryModel(Base):
     price: Mapped[float] = mapped_column(Float, nullable=False)
     currency_code: Mapped[str] = mapped_column(String(3), nullable=False)
     scraped_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    airline: Mapped[str] = mapped_column(String(100), nullable=False, default="Unknown")
 
     search: Mapped["SearchModel"] = relationship("SearchModel", back_populates="price_history")
 

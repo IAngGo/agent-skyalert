@@ -15,8 +15,13 @@ from sqlalchemy.orm import Session
 from backend.application.commands import CreateSearchCommand
 from backend.application.exceptions import SearchNotFoundError
 from backend.application.use_cases.create_search import CreateSearch
-from backend.infrastructure.api.schemas import CreateSearchRequest, SearchResponse
+from backend.infrastructure.api.schemas import (
+    CreateSearchRequest,
+    PriceHistoryPointResponse,
+    SearchResponse,
+)
 from backend.infrastructure.persistence.database import get_db
+from backend.infrastructure.persistence.price_history_repository import PostgresPriceHistoryRepository
 from backend.infrastructure.persistence.search_repository import PostgresSearchRepository
 from backend.infrastructure.persistence.user_repository import PostgresUserRepository
 
@@ -151,6 +156,50 @@ def list_user_searches(
             auto_purchase=s.auto_purchase,
         )
         for s in results
+    ]
+
+
+@router.get(
+    "/searches/{search_id}/price-history",
+    response_model=list[PriceHistoryPointResponse],
+)
+def get_price_history(
+    search_id: UUID,
+    limit: int = 500,
+    db: Session = Depends(get_db),
+    repos=Depends(_get_repos),
+) -> list[PriceHistoryPointResponse]:
+    """
+    Return the price time series for a search, ordered oldest → newest.
+
+    Args:
+        search_id: UUID path parameter.
+        limit: Maximum number of observations to return (default 500).
+        db: SQLAlchemy session.
+        repos: Injected repository tuple.
+
+    Returns:
+        List of price observations suitable for Chart.js.
+
+    Raises:
+        SearchNotFoundError: If no search exists with the given ID.
+    """
+    _, searches = repos
+    if searches.find_by_id(search_id) is None:
+        raise SearchNotFoundError(search_id)
+
+    ph_repo = PostgresPriceHistoryRepository(db)
+    records = ph_repo.find_by_search(search_id, limit=limit)
+    # find_by_search returns newest-first; reverse for chronological chart order
+    records = list(reversed(records))
+    return [
+        PriceHistoryPointResponse(
+            scraped_at=r.scraped_at,
+            price=r.price,
+            currency_code=r.currency_code,
+            airline=r.airline,
+        )
+        for r in records
     ]
 
 

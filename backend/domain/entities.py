@@ -145,6 +145,7 @@ class PriceHistory:
         price: Scraped fare value.
         currency_code: ISO 4217 code.
         scraped_at: UTC timestamp of the observation.
+        airline: Marketing carrier name for this price point.
     """
 
     id: UUID
@@ -152,6 +153,7 @@ class PriceHistory:
     price: float
     currency_code: str
     scraped_at: datetime
+    airline: str = "Unknown"
 
 
 @dataclass

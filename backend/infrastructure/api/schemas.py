@@ -125,6 +125,22 @@ class ConfirmAlertRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Price history schemas
+# ---------------------------------------------------------------------------
+
+
+class PriceHistoryPointResponse(BaseModel):
+    """One price observation for the time-series chart."""
+
+    scraped_at: datetime
+    price: float
+    currency_code: str
+    airline: str
+
+    model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------------------
 # Generic response schemas
 # ---------------------------------------------------------------------------
 
