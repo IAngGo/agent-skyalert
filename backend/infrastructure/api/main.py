@@ -9,6 +9,7 @@ This is the entry point for uvicorn:
 import os
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from backend.application.exceptions import SkyAlertError
@@ -32,6 +33,15 @@ def create_app() -> FastAPI:
         version="0.1.0",
         docs_url="/docs",
         redoc_url="/redoc",
+    )
+
+    # CORS — allow all origins in development; tighten for production
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     # Exception handlers

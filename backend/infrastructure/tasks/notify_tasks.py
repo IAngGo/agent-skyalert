@@ -65,10 +65,21 @@ def send_alert_notification(alert_id: str) -> dict:
         alerts = PostgresAlertRepository(session)
         searches = PostgresSearchRepository(session)
         users = PostgresUserRepository(session)
-        notification = CompositeNotificationService([
-            SendGridNotificationService(),
-            TwilioWhatsAppService(),
-        ])
+        channels = []
+        try:
+            channels.append(SendGridNotificationService())
+        except Exception:
+            logger.warning("SendGrid not configured — email notifications disabled.")
+        try:
+            channels.append(TwilioWhatsAppService())
+        except Exception:
+            logger.warning("Twilio not configured — WhatsApp notifications disabled.")
+
+        if not channels:
+            logger.error("No notification channels available for alert %s.", alert_id)
+            return {"alert_id": alert_id, "success": False}
+
+        notification = CompositeNotificationService(channels)
 
         use_case = SendAlertNotification(
             alerts=alerts,

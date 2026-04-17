@@ -1,13 +1,20 @@
 """
 Playwright-based implementation of the FlightScraper port for Google Flights.
 
-Opens Google Flights in a headless Chromium browser, fills in the search form,
-waits for results to render, and parses the flight cards into Flight entities.
+Opens Google Flights in a headless Chromium browser, navigates to the correct
+search URL, waits for results to render, and parses flight cards into Flight
+entities.
 
-This scraper is intentionally conservative: it waits for network idle and uses
-explicit selectors rather than timing hacks, to reduce bot-detection risk.
+URL construction: Google Flights uses a base64-encoded protobuf parameter
+called `tfs`. We build it directly from the search parameters — no hardcoded
+dates or airport codes.
+
+Selector strategy: Google's CSS class names change frequently (obfuscated
+React output). We rely on ARIA roles, text extraction, and regex instead of
+class-based selectors, which makes the parser resilient to UI rebuilds.
 """
 
+import base64
 import logging
 import re
 from datetime import date, datetime, timezone
@@ -19,24 +26,103 @@ from backend.domain.ports import FlightScraper
 
 logger = logging.getLogger(__name__)
 
-# Google Flights base URL — no credentials, public endpoint.
-_GF_URL = "https://www.google.com/travel/flights"
-
-# Maximum number of flight results to parse per scrape run.
+_GF_BASE = "https://www.google.com/travel/flights/search"
 _MAX_RESULTS = 10
+
+# Known airline names used for text-matching in parsed results.
+_KNOWN_AIRLINES = [
+    "Delta", "United", "American", "Southwest", "JetBlue", "Alaska",
+    "British Airways", "Lufthansa", "Air France", "Emirates", "Qatar Airways",
+    "KLM", "Turkish Airlines", "Iberia", "Virgin Atlantic", "Air Canada",
+    "LATAM", "Aeromexico", "Copa Airlines", "Avianca", "Spirit", "Frontier",
+    "Ryanair", "EasyJet", "Wizz Air", "Norwegian", "Finnair", "SAS",
+    "Aer Lingus", "TAP Air Portugal", "Swiss", "Austrian",
+]
+
+
+def _build_tfs(
+    origin: str,
+    destination: str,
+    departure_date: date,
+    return_date: date | None,
+    trip_type: TripType,
+) -> str:
+    """
+    Encode the Google Flights `tfs` protobuf parameter for a search.
+
+    The tfs parameter is a base64-encoded protobuf message that encodes the
+    trip type, outbound leg (date + airports), and optional return leg.
+
+    Protobuf structure (wire format, manually encoded):
+      Field 1 (varint 28): flight search header constant
+      Field 2 (varint):    trip type — 1 = one-way, 2 = round-trip
+      Field 3 (bytes):     outbound leg
+      Field 3 (bytes):     return leg (round-trip only)
+
+    Each leg encodes:
+      Field 2 (string): date "YYYY-MM-DD"
+      Field 13 (bytes): origin  → {field 1: 1, field 2: "IATA"}
+      Field 14 (bytes): destination → {field 1: 1, field 2: "IATA"}
+
+    Args:
+        origin: IATA departure code (e.g. "JFK").
+        destination: IATA arrival code (e.g. "LHR").
+        departure_date: Outbound travel date.
+        return_date: Return date for round trips; None for one-way.
+        trip_type: ONE_WAY or ROUND_TRIP.
+
+    Returns:
+        Base64-encoded string ready to be used as the `tfs` query parameter.
+    """
+    def _airport_bytes(code: str) -> bytes:
+        """Encode a single airport as an inner protobuf message."""
+        # field 1: varint 1   → 0x08 0x01
+        # field 2: string "XXX" → 0x12 0x03 + 3 bytes
+        inner = b"\x08\x01\x12\x03" + code.encode("ascii")
+        return inner
+
+    def _encode_leg(dep: date, from_code: str, to_code: str) -> bytes:
+        """Encode one flight leg (date + origin + destination)."""
+        date_str = dep.strftime("%Y-%m-%d").encode("ascii")
+        # field 2: date string
+        date_field = b"\x12" + bytes([len(date_str)]) + date_str
+        # field 13: origin airport
+        orig_inner = _airport_bytes(from_code)
+        orig_field = b"\x6a" + bytes([len(orig_inner)]) + orig_inner
+        # field 14: destination airport
+        dest_inner = _airport_bytes(to_code)
+        dest_field = b"\x72" + bytes([len(dest_inner)]) + dest_inner
+
+        leg = date_field + orig_field + dest_field
+        # field 3: this leg (length-delimited)
+        return b"\x1a" + bytes([len(leg)]) + leg
+
+    is_round = trip_type == TripType.ROUND_TRIP and return_date is not None
+
+    payload = (
+        b"\x08\x1c"                          # field 1: header constant 28
+        + (b"\x10\x02" if is_round else b"\x10\x01")  # field 2: trip type
+        + _encode_leg(departure_date, origin, destination)
+    )
+
+    if is_round:
+        payload += _encode_leg(return_date, destination, origin)
+
+    return base64.b64encode(payload).decode("ascii")
 
 
 class GoogleFlightsScraper(FlightScraper):
     """
     Scrapes Google Flights using Playwright (headless Chromium).
 
-    Each call to scrape() opens a new browser context to avoid session leakage
-    between searches. Contexts are closed after each scrape regardless of outcome.
+    Each call to scrape() opens a new browser context to avoid session
+    leakage between searches. Contexts are closed after each scrape
+    regardless of outcome.
     """
 
     def scrape(self, search: Search) -> list[Flight]:
         """
-        Open Google Flights, submit the search, and return parsed flight results.
+        Navigate to Google Flights, wait for results, and return parsed flights.
 
         Args:
             search: The Search entity defining origin, destination, dates, and trip type.
@@ -79,9 +165,24 @@ class GoogleFlightsScraper(FlightScraper):
             page = context.new_page()
             try:
                 url = self._build_url(search)
-                page.goto(url, wait_until="networkidle", timeout=30_000)
-                page.wait_for_selector('[data-results-container]', timeout=15_000)
+                logger.info("Scraping: %s", url)
+                page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+
+                # Dismiss cookie/consent dialog if present (EU region)
+                try:
+                    page.click('button:has-text("Accept all")', timeout=4_000)
+                except Exception:
+                    pass
+
+                # Wait until at least one price amount appears on the page
+                page.wait_for_selector(
+                    '[aria-label*="$"], [data-gs], span:has-text("$")',
+                    timeout=20_000,
+                )
                 flights = self._parse_results(page, search)
+                logger.info(
+                    "Search %s: parsed %d flights.", search.id, len(flights)
+                )
             finally:
                 context.close()
                 browser.close()
@@ -92,39 +193,35 @@ class GoogleFlightsScraper(FlightScraper):
         """
         Construct the Google Flights deep-link URL for a Search.
 
+        Uses the `tfs` protobuf parameter to encode the full search —
+        origin, destination, dates, and trip type.
+
         Args:
             search: The Search entity.
 
         Returns:
-            Full URL string pointing to the correct Google Flights results page.
+            Full Google Flights URL with encoded search parameters.
         """
-        dep = search.departure_date.strftime("%Y-%m-%d")
-        trip = "1" if search.trip_type == TripType.ONE_WAY else "2"
-
-        if search.trip_type == TripType.ROUND_TRIP and search.return_date:
-            ret = search.return_date.strftime("%Y-%m-%d")
-            return (
-                f"{_GF_URL}?hl=en&gl=us"
-                f"&tfs=CBwQAhoeEgoyMDI1LTAxLTAxagcIARIDSkZLcgcIARIDTEhS"
-                f"&curr=USD"
-                # Simplified: real implementation uses GF's encoded tfs parameter.
-                # Replace with actual URL construction from search params below.
-            )
-
-        return (
-            f"{_GF_URL}"
-            f"?hl=en&gl=us&curr=USD"
-            f"&tfs=CBwQARoeEgoyMDI1LTAxLTAxagcIARID"
-            f"{search.origin}cgcIARID{search.destination}"
+        tfs = _build_tfs(
+            origin=search.origin,
+            destination=search.destination,
+            departure_date=search.departure_date,
+            return_date=search.return_date,
+            trip_type=search.trip_type,
         )
+        return f"{_GF_BASE}?tfs={tfs}&hl=en&gl=us&curr=USD"
 
     def _parse_results(self, page: Page, search: Search) -> list[Flight]:
         """
         Parse flight result cards from the rendered Google Flights page.
 
+        Tries ARIA role selectors first. Falls back to a broader page-level
+        search if the primary container is not found, so the parser survives
+        minor UI changes between Google Flights deployments.
+
         Args:
             page: The Playwright Page with loaded search results.
-            search: The originating Search entity (for metadata).
+            search: The originating Search entity.
 
         Returns:
             List of up to _MAX_RESULTS Flight entities.
@@ -132,7 +229,16 @@ class GoogleFlightsScraper(FlightScraper):
         scraped_at = datetime.now(timezone.utc)
         flights: list[Flight] = []
 
-        cards = page.query_selector_all('[data-results-container] [role="listitem"]')
+        # Strategy 1: standard results list
+        cards = page.query_selector_all('[role="listitem"]')
+
+        # Strategy 2: if no listitems, grab any container with a price
+        if not cards:
+            logger.warning(
+                "No [role=listitem] found for search %s — trying broad selector.",
+                search.id,
+            )
+            cards = page.query_selector_all('[data-gs]')
 
         for card in cards[:_MAX_RESULTS]:
             try:
@@ -140,8 +246,7 @@ class GoogleFlightsScraper(FlightScraper):
                 if flight:
                     flights.append(flight)
             except Exception:
-                logger.warning("Failed to parse a flight card — skipping.", exc_info=True)
-                continue
+                logger.debug("Failed to parse a flight card — skipping.", exc_info=True)
 
         return flights
 
@@ -149,36 +254,60 @@ class GoogleFlightsScraper(FlightScraper):
         """
         Extract a single Flight entity from a result card element.
 
+        Uses text extraction with regex rather than fragile CSS class selectors,
+        since Google's class names are obfuscated and change with every deploy.
+
         Args:
             card: A Playwright ElementHandle for one flight result card.
-            search: The originating Search (provides fallback metadata).
+            search: The originating Search (provides route metadata).
             scraped_at: UTC timestamp to stamp the Flight snapshot.
 
         Returns:
-            A Flight entity, or None if the card cannot be parsed.
+            A Flight entity, or None if a price cannot be extracted.
         """
-        price_el = card.query_selector('[data-gs]')
-        airline_el = card.query_selector('.sSHqwe')
-        duration_el = card.query_selector('.AdWm1c.gvkrdb')
-        stops_el = card.query_selector('.EfT7Ae .ogfYpf')
-        link_el = card.query_selector('a[href]')
-
-        if not price_el:
+        text = card.inner_text()
+        if not text.strip():
             return None
 
-        price_text = price_el.inner_text().strip()
-        price = self._parse_price(price_text)
-        if price is None:
+        # ── Price ────────────────────────────────────────────────────────────
+        # Google Flights shows prices like "$1,234" or "$ 890"
+        price_match = re.search(r"\$\s*([\d,]+)", text)
+        if not price_match:
             return None
+        price = float(price_match.group(1).replace(",", ""))
 
-        airline = airline_el.inner_text().strip() if airline_el else "Unknown"
-        duration_text = duration_el.inner_text().strip() if duration_el else "0 hr 0 min"
-        duration_minutes = self._parse_duration(duration_text)
-        stops_text = stops_el.inner_text().strip() if stops_el else "Nonstop"
-        stops = 0 if "nonstop" in stops_text.lower() else int(re.search(r"\d+", stops_text).group())
-        url = link_el.get_attribute("href") if link_el else _GF_URL
-        if url and not url.startswith("http"):
-            url = f"https://www.google.com{url}"
+        # ── Duration ─────────────────────────────────────────────────────────
+        # Formats: "10 hr 25 min" | "10hr 25min" | "10:25"
+        dur_match = re.search(r"(\d+)\s*hr\s*(\d+)\s*min", text, re.IGNORECASE)
+        if dur_match:
+            duration_minutes = int(dur_match.group(1)) * 60 + int(dur_match.group(2))
+        else:
+            hm_match = re.search(r"(\d+):(\d{2})", text)
+            duration_minutes = (
+                int(hm_match.group(1)) * 60 + int(hm_match.group(2))
+                if hm_match else 0
+            )
+
+        # ── Stops ────────────────────────────────────────────────────────────
+        if re.search(r"nonstop", text, re.IGNORECASE):
+            stops = 0
+        else:
+            stops_match = re.search(r"(\d+)\s+stop", text, re.IGNORECASE)
+            stops = int(stops_match.group(1)) if stops_match else 0
+
+        # ── Airline ──────────────────────────────────────────────────────────
+        airline = "Unknown"
+        for name in _KNOWN_AIRLINES:
+            if name.lower() in text.lower():
+                airline = name
+                break
+
+        # ── URL ──────────────────────────────────────────────────────────────
+        link_el = card.query_selector("a[href]")
+        url: str = _GF_BASE
+        if link_el:
+            href = link_el.get_attribute("href") or ""
+            url = href if href.startswith("http") else f"https://www.google.com{href}"
 
         return Flight(
             origin=search.origin,
@@ -188,45 +317,8 @@ class GoogleFlightsScraper(FlightScraper):
             price=price,
             currency_code="USD",
             airline=airline,
-            url=url or _GF_URL,
+            url=url,
             scraped_at=scraped_at,
             duration_minutes=duration_minutes,
             stops=stops,
         )
-
-    @staticmethod
-    def _parse_price(text: str) -> float | None:
-        """
-        Extract a numeric price from a formatted string like "$1,234".
-
-        Args:
-            text: Raw price string from the page.
-
-        Returns:
-            Float price, or None if not parseable.
-        """
-        digits = re.sub(r"[^\d.]", "", text)
-        try:
-            return float(digits)
-        except ValueError:
-            return None
-
-    @staticmethod
-    def _parse_duration(text: str) -> int:
-        """
-        Convert a duration string like "10 hr 25 min" to total minutes.
-
-        Args:
-            text: Raw duration string from the page.
-
-        Returns:
-            Total duration in minutes (0 if not parseable).
-        """
-        hours = re.search(r"(\d+)\s*hr", text)
-        minutes = re.search(r"(\d+)\s*min", text)
-        total = 0
-        if hours:
-            total += int(hours.group(1)) * 60
-        if minutes:
-            total += int(minutes.group(1))
-        return total
