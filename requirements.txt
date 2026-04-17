@@ -22,5 +22,8 @@ twilio==9.3.3
 # Environment
 python-dotenv==1.0.1
 
+# Auth
+python-jose[cryptography]==3.3.0
+
 # Testing
 pytest==9.0.3

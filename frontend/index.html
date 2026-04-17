@@ -36,18 +36,13 @@
   <!-- ── Main ── -->
   <main class="container mx-auto px-4 py-8 max-w-3xl">
 
-    <!-- User ID input (MVP: no auth, user enters their UUID) -->
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-6">
-      <label class="block text-sm font-medium text-gray-700 mb-1">Your User ID</label>
-      <div class="flex gap-2">
-        <input id="userId" type="text" placeholder="Paste your user UUID here"
-               class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-        <button onclick="loadDashboard()"
-                class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition">
-          Load
-        </button>
-      </div>
-      <p id="userError" class="text-red-500 text-xs mt-1 hidden"></p>
+    <!-- Not signed in state (shown when no session in localStorage) -->
+    <div id="notSignedIn" class="hidden bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6 text-center">
+      <p class="text-gray-600 text-sm mb-4">Sign in to view and manage your flight searches.</p>
+      <a href="/app/login.html"
+         class="inline-block bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition">
+        Sign in
+      </a>
     </div>
 
     <!-- Searches list -->
@@ -114,24 +109,11 @@
 
     /**
      * Load and render the dashboard for the given user ID.
+     * @param {string} userId
      */
-    window.loadDashboard = async function () {
-      const userId = document.getElementById("userId").value.trim();
-      const errorEl = document.getElementById("userError");
-      const listEl  = document.getElementById("searchList");
-
-      errorEl.classList.add("hidden");
+    async function loadDashboard(userId) {
+      const listEl = document.getElementById("searchList");
       listEl.innerHTML = '<p class="text-gray-400 text-sm">Loading…</p>';
-
-      if (!userId) {
-        errorEl.textContent = "Please enter a valid User ID.";
-        errorEl.classList.remove("hidden");
-        listEl.innerHTML = "";
-        return;
-      }
-
-      // Save for other pages (email will be set after first successful load)
-      localStorage.setItem("skyalert_user_id", userId);
 
       try {
         const searches = await getUserSearches(userId);
@@ -150,7 +132,7 @@
       } catch (err) {
         listEl.innerHTML = `<p class="text-red-500 text-sm">${err.message}</p>`;
       }
-    };
+    }
 
     /**
      * Build a search card DOM node from a SearchResponse object.
@@ -266,17 +248,17 @@
       location.reload();
     };
 
-    // Auto-load if user ID is saved
+    // Auto-load if signed in, otherwise show the sign-in prompt
     const saved      = localStorage.getItem("skyalert_user_id");
     const savedEmail = localStorage.getItem("skyalert_user_email");
 
     updateNavbar(savedEmail);
 
     if (saved) {
-      document.getElementById("userId").value = saved;
-      window.loadDashboard();
+      loadDashboard(saved);
     } else {
-      updateNavbar(null);
+      document.getElementById("notSignedIn").classList.remove("hidden");
+      document.getElementById("searchList").innerHTML = "";
     }
   </script>
 

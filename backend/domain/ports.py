@@ -138,13 +138,19 @@ class PriceHistoryRepository(ABC):
         """
 
     @abstractmethod
-    def find_by_search(self, search_id: UUID, limit: int = 100) -> list[PriceHistory]:
+    def find_by_search(
+        self,
+        search_id: UUID,
+        limit: int = 100,
+        since: datetime | None = None,
+    ) -> list[PriceHistory]:
         """
         Retrieve the most recent price observations for a Search.
 
         Args:
             search_id: UUID of the parent Search.
             limit: Maximum number of records to return (most recent first).
+            since: If provided, only return observations at or after this UTC timestamp.
 
         Returns:
             List of PriceHistory entities ordered by scraped_at descending.
@@ -235,6 +241,23 @@ class NotificationService(ABC):
 
         Returns:
             True if the notification was dispatched successfully, False otherwise.
+        """
+
+
+class AuthNotificationService(ABC):
+    """Port for sending authentication emails (magic links)."""
+
+    @abstractmethod
+    def send_magic_link(self, to_email: str, link: str) -> bool:
+        """
+        Send a magic-link login email.
+
+        Args:
+            to_email: Recipient email address.
+            link: The full URL the user must click to authenticate.
+
+        Returns:
+            True if the email was dispatched successfully, False otherwise.
         """
 
 

@@ -111,6 +111,13 @@ class PurchaseFailedError(SkyAlertError):
         self.alert_id = alert_id
 
 
+class InvalidTokenError(SkyAlertError):
+    """Raised when a magic-link token is invalid, expired, or tampered with."""
+
+    def __init__(self) -> None:
+        super().__init__("The magic link is invalid or has expired.")
+
+
 class SearchInactiveError(SkyAlertError):
     """Raised when an operation is attempted on a Search that is not active."""
 

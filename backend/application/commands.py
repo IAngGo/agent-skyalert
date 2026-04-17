@@ -100,6 +100,32 @@ class SendAlertNotificationCommand:
 
 
 @dataclass(frozen=True)
+class RequestMagicLinkCommand:
+    """
+    Input required to request a magic-link login email.
+
+    Attributes:
+        email: The user's email address.
+        base_url: Frontend base URL used to construct the verify link (e.g. "http://localhost:8000").
+    """
+
+    email: str
+    base_url: str
+
+
+@dataclass(frozen=True)
+class VerifyMagicLinkCommand:
+    """
+    Input required to verify a magic-link token.
+
+    Attributes:
+        token: The signed JWT from the magic-link URL.
+    """
+
+    token: str
+
+
+@dataclass(frozen=True)
 class ConfirmAlertCommand:
     """
     Input required when a user acknowledges an alert (optionally triggering purchase).

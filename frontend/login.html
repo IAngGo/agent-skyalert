@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SkyAlert — Sign in</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/app/css/custom.css" />
+</head>
+<body class="bg-gray-50 min-h-screen flex items-center justify-center">
+
+  <div class="w-full max-w-sm mx-auto px-4">
+
+    <!-- Logo -->
+    <div class="text-center mb-8">
+      <a href="/app/landing.html" class="text-2xl font-bold text-blue-600 tracking-tight">✈ SkyAlert</a>
+      <p class="text-gray-500 text-sm mt-1">Flight price monitoring</p>
+    </div>
+
+    <!-- Card -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
+
+      <!-- Default state: form -->
+      <div id="formView">
+        <h1 class="text-lg font-semibold text-gray-800 mb-1">Sign in</h1>
+        <p class="text-sm text-gray-500 mb-6">
+          Enter your email and we'll send you a login link — no password needed.
+        </p>
+
+        <form id="loginForm" onsubmit="handleSubmit(event)">
+          <label class="block text-sm font-medium text-gray-700 mb-1" for="email">
+            Email address
+          </label>
+          <input
+            id="email" type="email" name="email" required autocomplete="email"
+            placeholder="you@example.com"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm
+                   focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
+          />
+
+          <p id="errorMsg" class="text-red-500 text-xs mb-3 hidden"></p>
+
+          <button
+            id="submitBtn" type="submit"
+            class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium
+                   py-2.5 rounded-lg text-sm transition">
+            Send magic link
+          </button>
+        </form>
+      </div>
+
+      <!-- Success state -->
+      <div id="successView" class="hidden text-center">
+        <div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <svg class="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+          </svg>
+        </div>
+        <h2 class="text-base font-semibold text-gray-800 mb-1">Check your inbox</h2>
+        <p class="text-sm text-gray-500">
+          We sent a login link to <strong id="sentTo" class="text-gray-700"></strong>.
+          It expires in 15 minutes.
+        </p>
+        <button onclick="resetForm()"
+                class="mt-5 text-sm text-blue-600 hover:underline">
+          Use a different email
+        </button>
+      </div>
+
+    </div>
+
+  </div>
+
+  <script type="module">
+    import { requestMagicLink } from "/app/js/api.js";
+
+    // Redirect to dashboard if already signed in
+    if (localStorage.getItem("skyalert_user_id")) {
+      location.replace("/app/index.html");
+    }
+
+    window.handleSubmit = async function (e) {
+      e.preventDefault();
+      const email   = document.getElementById("email").value.trim();
+      const btn     = document.getElementById("submitBtn");
+      const errorEl = document.getElementById("errorMsg");
+
+      errorEl.classList.add("hidden");
+      btn.disabled = true;
+      btn.textContent = "Sending…";
+
+      try {
+        await requestMagicLink(email);
+        document.getElementById("sentTo").textContent = email;
+        document.getElementById("formView").classList.add("hidden");
+        document.getElementById("successView").classList.remove("hidden");
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.classList.remove("hidden");
+        btn.disabled = false;
+        btn.textContent = "Send magic link";
+      }
+    };
+
+    window.resetForm = function () {
+      document.getElementById("formView").classList.remove("hidden");
+      document.getElementById("successView").classList.add("hidden");
+      document.getElementById("submitBtn").disabled = false;
+      document.getElementById("submitBtn").textContent = "Send magic link";
+    };
+  </script>
+
+</body>
+</html>

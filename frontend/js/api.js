@@ -90,17 +90,40 @@ export async function deleteSearch(searchId) {
 }
 
 // ---------------------------------------------------------------------------
+// Auth
+// ---------------------------------------------------------------------------
+
+/**
+ * Request a magic-link login email.
+ * @param {string} email
+ * @returns {Promise<{message: string}>}
+ */
+export async function requestMagicLink(email) {
+  return request("/auth/magic-link", { method: "POST", body: JSON.stringify({ email }) });
+}
+
+/**
+ * Verify a magic-link token and return user identity.
+ * @param {string} token
+ * @returns {Promise<{user_id: string, email: string}>}
+ */
+export async function verifyMagicLink(token) {
+  return request(`/auth/verify?token=${encodeURIComponent(token)}`);
+}
+
+// ---------------------------------------------------------------------------
 // Alerts
 // ---------------------------------------------------------------------------
 
 /**
  * Fetch the price time series for a search.
  * @param {string} searchId
- * @param {number} [limit=500]
+ * @param {number|null} [days=30]  Number of days to look back. Pass null for all-time.
  * @returns {Promise<object[]>} PriceHistoryPointResponse[]
  */
-export async function getPriceHistory(searchId, limit = 500) {
-  return request(`/searches/${searchId}/price-history?limit=${limit}`);
+export async function getPriceHistory(searchId, days = 30) {
+  const qs = days != null ? `?days=${days}` : "?days=3650";
+  return request(`/searches/${searchId}/price-history${qs}`);
 }
 
 /**

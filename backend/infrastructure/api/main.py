@@ -18,7 +18,7 @@ from backend.infrastructure.api.exception_handlers import (
     skyalert_exception_handler,
     value_error_handler,
 )
-from backend.infrastructure.api.routers import alerts, searches, users
+from backend.infrastructure.api.routers import alerts, auth, searches, users
 
 
 def create_app() -> FastAPI:
@@ -50,6 +50,7 @@ def create_app() -> FastAPI:
     app.add_exception_handler(ValueError, value_error_handler)
 
     # Routers
+    app.include_router(auth.router)
     app.include_router(users.router)
     app.include_router(searches.router)
     app.include_router(alerts.router)

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SkyAlert — Signing in…</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/app/css/custom.css" />
+</head>
+<body class="bg-gray-50 min-h-screen flex items-center justify-center">
+
+  <div class="w-full max-w-sm mx-auto px-4 text-center">
+
+    <a href="/app/landing.html" class="text-2xl font-bold text-blue-600 tracking-tight">✈ SkyAlert</a>
+
+    <!-- Loading -->
+    <div id="loadingView" class="mt-8">
+      <div class="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full
+                  animate-spin mx-auto mb-4"></div>
+      <p class="text-gray-600 text-sm">Verifying your link…</p>
+    </div>
+
+    <!-- Error -->
+    <div id="errorView" class="hidden mt-8">
+      <div class="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+        <svg class="w-6 h-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </div>
+      <h2 class="text-base font-semibold text-gray-800 mb-1">Link expired or invalid</h2>
+      <p class="text-sm text-gray-500 mb-5">
+        Magic links expire after 15 minutes. Please request a new one.
+      </p>
+      <a href="/app/login.html"
+         class="inline-block bg-blue-600 hover:bg-blue-700 text-white text-sm
+                font-medium px-5 py-2.5 rounded-lg transition">
+        Back to sign in
+      </a>
+    </div>
+
+  </div>
+
+  <script type="module">
+    import { verifyMagicLink } from "/app/js/api.js";
+
+    const token = new URLSearchParams(location.search).get("token");
+
+    if (!token) {
+      showError();
+    } else {
+      verify(token);
+    }
+
+    async function verify(token) {
+      try {
+        const { user_id, email } = await verifyMagicLink(token);
+        localStorage.setItem("skyalert_user_id", user_id);
+        localStorage.setItem("skyalert_user_email", email);
+        location.replace("/app/index.html");
+      } catch {
+        showError();
+      }
+    }
+
+    function showError() {
+      document.getElementById("loadingView").classList.add("hidden");
+      document.getElementById("errorView").classList.remove("hidden");
+    }
+  </script>
+
+</body>
+</html>
