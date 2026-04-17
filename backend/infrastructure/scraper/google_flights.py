@@ -30,11 +30,13 @@ _GF_BASE = "https://www.google.com/travel/flights/search"
 _MAX_RESULTS = 10
 
 # Known airline names used for text-matching in parsed results.
+# Order matters: more specific names before shorter substrings
+# (e.g. "Copa Airlines" before "Copa" would never match because Google shows "COPA").
 _KNOWN_AIRLINES = [
     "Delta", "United", "American", "Southwest", "JetBlue", "Alaska",
     "British Airways", "Lufthansa", "Air France", "Emirates", "Qatar Airways",
     "KLM", "Turkish Airlines", "Iberia", "Virgin Atlantic", "Air Canada",
-    "LATAM", "Aeromexico", "Copa Airlines", "Avianca", "Spirit", "Frontier",
+    "LATAM", "Aeromexico", "Copa", "Avianca", "Spirit", "Frontier",
     "Ryanair", "EasyJet", "Wizz Air", "Norwegian", "Finnair", "SAS",
     "Aer Lingus", "TAP Air Portugal", "Swiss", "Austrian",
 ]
@@ -174,11 +176,8 @@ class GoogleFlightsScraper(FlightScraper):
                 except Exception:
                     pass
 
-                # Wait until at least one price amount appears on the page
-                page.wait_for_selector(
-                    '[aria-label*="$"], [data-gs], span:has-text("$")',
-                    timeout=20_000,
-                )
+                # Wait until price data appears — [data-gs] is the reliable signal
+                page.wait_for_selector("[data-gs]", timeout=20_000)
                 flights = self._parse_results(page, search)
                 logger.info(
                     "Search %s: parsed %d flights.", search.id, len(flights)
@@ -229,13 +228,17 @@ class GoogleFlightsScraper(FlightScraper):
         scraped_at = datetime.now(timezone.utc)
         flights: list[Flight] = []
 
-        # Strategy 1: standard results list
-        cards = page.query_selector_all('[role="listitem"]')
+        # Strategy 1: flight result rows inside the results list.
+        # Google Flights renders each flight as a <li> inside a <ul role="list">.
+        # We filter to only those that contain a "$" price — the first few <li>
+        # elements in the same list are passenger-count controls without prices.
+        all_lis = page.query_selector_all('ul[role="list"] li')
+        cards = [li for li in all_lis if re.search(r'\$\s*[\d,]+', li.inner_text())]
 
-        # Strategy 2: if no listitems, grab any container with a price
+        # Strategy 2: fallback to [data-gs] if the primary structure is absent.
         if not cards:
             logger.warning(
-                "No [role=listitem] found for search %s — trying broad selector.",
+                "No priced <li> found for search %s — trying [data-gs] fallback.",
                 search.id,
             )
             cards = page.query_selector_all('[data-gs]')
