@@ -98,9 +98,16 @@ class InMemoryPriceHistoryRepository(PriceHistoryRepository):
             return None
         return sum(r.price for r in observations) / len(observations)
 
-    def find_by_search(self, search_id: UUID, limit: int = 100) -> list[PriceHistory]:
+    def find_by_search(
+        self,
+        search_id: UUID,
+        limit: int = 100,
+        since: datetime | None = None,
+    ) -> list[PriceHistory]:
         """Return the most recent observations for a search, up to limit."""
         matching = [r for r in self._records if r.search_id == search_id]
+        if since is not None:
+            matching = [r for r in matching if r.scraped_at >= since]
         matching.sort(key=lambda r: r.scraped_at, reverse=True)
         return matching[:limit]
 

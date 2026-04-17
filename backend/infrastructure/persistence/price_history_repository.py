@@ -68,22 +68,28 @@ class PostgresPriceHistoryRepository(PriceHistoryRepository):
         )
         return float(result) if result is not None else None
 
-    def find_by_search(self, search_id: UUID, limit: int = 100) -> list[PriceHistory]:
+    def find_by_search(
+        self,
+        search_id: UUID,
+        limit: int = 100,
+        since: datetime | None = None,
+    ) -> list[PriceHistory]:
         """
         Retrieve the most recent price observations for a Search.
 
         Args:
             search_id: UUID of the parent Search.
             limit: Maximum number of records to return (most recent first).
+            since: If provided, only return observations at or after this UTC timestamp.
 
         Returns:
             List of PriceHistory entities ordered by scraped_at descending.
         """
-        models = (
+        q = (
             self._session.query(PriceHistoryModel)
             .filter(PriceHistoryModel.search_id == search_id)
-            .order_by(PriceHistoryModel.scraped_at.desc())
-            .limit(limit)
-            .all()
         )
+        if since is not None:
+            q = q.filter(PriceHistoryModel.scraped_at >= since)
+        models = q.order_by(PriceHistoryModel.scraped_at.desc()).limit(limit).all()
         return [price_history_to_domain(m) for m in models]

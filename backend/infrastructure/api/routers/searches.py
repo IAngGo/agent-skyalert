@@ -7,9 +7,10 @@ GET  /users/{uid}/searches — list all searches for a user
 DELETE /searches/{id}    — deactivate a search
 """
 
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from backend.application.commands import CreateSearchCommand
@@ -165,7 +166,7 @@ def list_user_searches(
 )
 def get_price_history(
     search_id: UUID,
-    limit: int = 500,
+    days: int | None = Query(default=30, ge=1, description="Restrict to last N days. Omit for all-time."),
     db: Session = Depends(get_db),
     repos=Depends(_get_repos),
 ) -> list[PriceHistoryPointResponse]:
@@ -174,7 +175,8 @@ def get_price_history(
 
     Args:
         search_id: UUID path parameter.
-        limit: Maximum number of observations to return (default 500).
+        days: If provided, only return observations within the last N days (default 30).
+              Pass days=0 or omit to get all-time data.
         db: SQLAlchemy session.
         repos: Injected repository tuple.
 
@@ -188,8 +190,12 @@ def get_price_history(
     if searches.find_by_id(search_id) is None:
         raise SearchNotFoundError(search_id)
 
+    since: datetime | None = None
+    if days is not None:
+        since = datetime.now(timezone.utc) - timedelta(days=days)
+
     ph_repo = PostgresPriceHistoryRepository(db)
-    records = ph_repo.find_by_search(search_id, limit=limit)
+    records = ph_repo.find_by_search(search_id, limit=2000, since=since)
     # find_by_search returns newest-first; reverse for chronological chart order
     records = list(reversed(records))
     return [

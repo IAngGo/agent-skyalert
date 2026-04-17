@@ -35,9 +35,17 @@
 
     <!-- Chart card -->
     <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mb-6 fade-in">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-base font-semibold text-gray-800">Price over time</h2>
-        <div id="legend" class="flex flex-wrap gap-3 text-xs"></div>
+      <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+        <div class="flex items-center gap-3">
+          <h2 class="text-base font-semibold text-gray-800">Price over time</h2>
+          <div id="legend" class="flex flex-wrap gap-3 text-xs"></div>
+        </div>
+        <!-- Range toggle -->
+        <div class="flex items-center gap-1 bg-gray-100 rounded-lg p-1 text-xs font-medium">
+          <button id="btn7"  onclick="setRange(7)"   class="range-btn px-3 py-1 rounded-md transition">7d</button>
+          <button id="btn30" onclick="setRange(30)"  class="range-btn px-3 py-1 rounded-md transition">30d</button>
+          <button id="btnAll" onclick="setRange(null)" class="range-btn px-3 py-1 rounded-md transition">All time</button>
+        </div>
       </div>
       <div class="relative" style="height: 320px;">
         <canvas id="priceChart"></canvas>
@@ -47,7 +55,10 @@
       </div>
     </div>
 
-    <!-- Latest prices table -->
+    <!-- Per-airline summary cards -->
+    <div id="airlineCards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6 fade-in"></div>
+
+    <!-- Latest prices table (kept as secondary detail) -->
     <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 fade-in">
       <h2 class="text-base font-semibold text-gray-800 mb-4">Latest prices by airline</h2>
       <div id="latestTable">
@@ -62,7 +73,7 @@
   <script type="module">
     import { getSearch, getPriceHistory } from "/app/js/api.js";
 
-    // ── Colour palette for airlines ──────────────────────────────────────
+    // ── Colour palette ────────────────────────────────────────────────────────
     const PALETTE = [
       "#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6",
       "#06b6d4", "#f97316", "#84cc16", "#ec4899", "#6366f1",
@@ -70,38 +81,111 @@
 
     const params   = new URLSearchParams(location.search);
     const searchId = params.get("id");
+    let   activeRange = 30;   // current days selection
+    let   chartInstance = null;
+    let   cachedSearch  = null;
 
     if (!searchId) {
-      document.getElementById("errorMsg").textContent = "No search ID in URL.";
-      document.getElementById("errorMsg").classList.remove("hidden");
+      showError("No search ID in URL.");
     } else {
-      loadPage(searchId);
+      loadPage(searchId, activeRange);
     }
 
-    async function loadPage(id) {
+    // ── Range toggle ─────────────────────────────────────────────────────────
+
+    window.setRange = function (days) {
+      activeRange = days;
+      highlightActiveBtn(days);
+      if (!searchId) return;
+      document.getElementById("chartPlaceholder")?.remove();
+
+      // Destroy existing chart before re-drawing
+      if (chartInstance) {
+        chartInstance.destroy();
+        chartInstance = null;
+      }
+      // Re-add placeholder while loading
+      const wrap = document.getElementById("priceChart").parentElement;
+      const ph = document.createElement("div");
+      ph.id = "chartPlaceholder";
+      ph.className = "absolute inset-0 flex items-center justify-center text-gray-400 text-sm";
+      ph.textContent = "Loading…";
+      wrap.appendChild(ph);
+
+      document.getElementById("legend").innerHTML = "";
+      document.getElementById("airlineCards").innerHTML = "";
+
+      getPriceHistory(searchId, days).then((history) => {
+        document.getElementById("chartPlaceholder")?.remove();
+        if (!history.length) {
+          renderEmpty();
+          return;
+        }
+        renderChart(history);
+        renderAirlineCards(history);
+        renderLatestTable(history);
+      }).catch(showError);
+    };
+
+    function highlightActiveBtn(days) {
+      const map = { 7: "btn7", 30: "btn30", null: "btnAll" };
+      ["btn7", "btn30", "btnAll"].forEach((id) => {
+        const el = document.getElementById(id);
+        el.classList.remove("bg-white", "shadow-sm", "text-blue-600", "text-gray-600");
+      });
+      const active = document.getElementById(map[days]);
+      active.classList.add("bg-white", "shadow-sm", "text-blue-600");
+      ["btn7", "btn30", "btnAll"].filter((id) => id !== map[days]).forEach((id) => {
+        document.getElementById(id).classList.add("text-gray-600");
+      });
+    }
+
+    // ── Initial load ──────────────────────────────────────────────────────────
+
+    async function loadPage(id, days) {
+      highlightActiveBtn(days);
       try {
         const [search, history] = await Promise.all([
           getSearch(id),
-          getPriceHistory(id),
+          getPriceHistory(id, days),
         ]);
-
+        cachedSearch = search;
         renderHeader(search);
 
         if (!history.length) {
-          document.getElementById("chartPlaceholder").textContent =
-            "No price data yet — check back after the first scrape.";
-          document.getElementById("latestTable").innerHTML =
-            '<p class="text-gray-400 text-sm">No data yet.</p>';
+          renderEmpty();
           return;
         }
 
         renderChart(history);
+        renderAirlineCards(history);
         renderLatestTable(history);
       } catch (err) {
-        const el = document.getElementById("errorMsg");
-        el.textContent = err.message;
-        el.classList.remove("hidden");
+        showError(err.message);
       }
+    }
+
+    // ── Render helpers ────────────────────────────────────────────────────────
+
+    function showError(msg) {
+      const el = document.getElementById("errorMsg");
+      el.textContent = msg;
+      el.classList.remove("hidden");
+    }
+
+    function renderEmpty() {
+      const ph = document.getElementById("chartPlaceholder");
+      if (ph) ph.textContent = "No price data yet — check back after the first scrape.";
+      else {
+        const wrap = document.getElementById("priceChart").parentElement;
+        const newPh = document.createElement("div");
+        newPh.className = "absolute inset-0 flex items-center justify-center text-gray-400 text-sm";
+        newPh.textContent = "No price data yet — check back after the first scrape.";
+        wrap.appendChild(newPh);
+      }
+      document.getElementById("airlineCards").innerHTML = "";
+      document.getElementById("latestTable").innerHTML =
+        '<p class="text-gray-400 text-sm">No data yet.</p>';
     }
 
     function renderHeader(search) {
@@ -119,25 +203,22 @@
     }
 
     function renderChart(history) {
-      document.getElementById("chartPlaceholder").remove();
+      document.getElementById("chartPlaceholder")?.remove();
+      document.getElementById("legend").innerHTML = "";
 
       // Group data points by airline
       const airlineMap = {};
       for (const point of history) {
         if (!airlineMap[point.airline]) airlineMap[point.airline] = [];
-        airlineMap[point.airline].push({
-          x: new Date(point.scraped_at),
-          y: point.price,
-        });
+        airlineMap[point.airline].push({ x: new Date(point.scraped_at), y: point.price });
       }
 
-      const airlines = Object.keys(airlineMap).sort();
-      const legendEl = document.getElementById("legend");
+      const airlines  = Object.keys(airlineMap).sort();
+      const legendEl  = document.getElementById("legend");
 
       const datasets = airlines.map((airline, i) => {
         const color = PALETTE[i % PALETTE.length];
 
-        // Legend dot
         const dot = document.createElement("span");
         dot.className = "flex items-center gap-1";
         dot.innerHTML = `
@@ -162,7 +243,7 @@
       });
 
       const ctx = document.getElementById("priceChart").getContext("2d");
-      new Chart(ctx, {
+      chartInstance = new Chart(ctx, {
         type: "scatter",
         data: { datasets },
         options: {
@@ -173,8 +254,7 @@
             legend: { display: false },
             tooltip: {
               callbacks: {
-                label: (ctx) =>
-                  `${ctx.dataset.label}: $${ctx.parsed.y.toFixed(0)}`,
+                label: (ctx) => `${ctx.dataset.label}: $${ctx.parsed.y.toFixed(0)}`,
                 title: (items) => {
                   const d = new Date(items[0].parsed.x);
                   return d.toLocaleString("en-US", {
@@ -209,8 +289,73 @@
       });
     }
 
+    /**
+     * Render one summary card per airline showing min, avg, and current price.
+     * @param {object[]} history  Ordered oldest → newest.
+     */
+    function renderAirlineCards(history) {
+      const container = document.getElementById("airlineCards");
+      container.innerHTML = "";
+
+      // Build per-airline stats
+      const stats = {};
+      for (const point of history) {
+        if (!stats[point.airline]) {
+          stats[point.airline] = { min: Infinity, sum: 0, count: 0, current: null, currency: point.currency_code };
+        }
+        const s = stats[point.airline];
+        if (point.price < s.min) s.min = point.price;
+        s.sum   += point.price;
+        s.count += 1;
+        s.current = point.price; // history is oldest→newest so last wins
+      }
+
+      const airlines = Object.keys(stats).sort((a, b) => stats[a].current - stats[b].current);
+
+      airlines.forEach((airline, i) => {
+        const s     = stats[airline];
+        const avg   = s.sum / s.count;
+        const color = PALETTE[
+          Object.keys(stats).sort().indexOf(airline) % PALETTE.length
+        ];
+        const isCheapest = i === 0;
+
+        const card = document.createElement("div");
+        card.className = "bg-white rounded-2xl shadow-sm border border-gray-200 p-5 fade-in";
+        card.innerHTML = `
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span style="background:${color}" class="w-3 h-3 rounded-full flex-shrink-0"></span>
+              <span class="text-sm font-semibold text-gray-800">${airline}</span>
+            </div>
+            ${isCheapest
+              ? '<span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">cheapest</span>'
+              : ""}
+          </div>
+          <div class="grid grid-cols-3 gap-2 text-center">
+            <div>
+              <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Min</p>
+              <p class="text-base font-bold text-gray-800 font-mono">$${fmt(s.min)}</p>
+            </div>
+            <div>
+              <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Avg</p>
+              <p class="text-base font-bold text-gray-800 font-mono">$${fmt(avg)}</p>
+            </div>
+            <div>
+              <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Current</p>
+              <p class="text-base font-bold text-blue-600 font-mono">$${fmt(s.current)}</p>
+            </div>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function fmt(n) {
+      return n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    }
+
     function renderLatestTable(history) {
-      // Find the latest price per airline
       const latest = {};
       const prev   = {};
 
@@ -218,15 +363,12 @@
         if (!latest[point.airline]) {
           latest[point.airline] = point;
         } else {
-          // history is oldest→newest, so later entries override
           prev[point.airline]   = latest[point.airline];
           latest[point.airline] = point;
         }
       }
 
-      const airlines = Object.keys(latest).sort(
-        (a, b) => latest[a].price - latest[b].price
-      );
+      const airlines = Object.keys(latest).sort((a, b) => latest[a].price - latest[b].price);
 
       const rows = airlines.map((airline, i) => {
         const cur  = latest[airline].price;
@@ -234,9 +376,9 @@
         let trend  = "";
         if (old !== undefined) {
           const diff = cur - old;
-          if (diff < -0.5) trend = `<span class="text-green-600 font-medium">↓ $${Math.abs(diff).toFixed(0)}</span>`;
-          else if (diff > 0.5) trend = `<span class="text-red-500 font-medium">↑ $${diff.toFixed(0)}</span>`;
-          else trend = `<span class="text-gray-400">—</span>`;
+          if (diff < -0.5)      trend = `<span class="text-green-600 font-medium">↓ $${Math.abs(diff).toFixed(0)}</span>`;
+          else if (diff > 0.5)  trend = `<span class="text-red-500 font-medium">↑ $${diff.toFixed(0)}</span>`;
+          else                  trend = `<span class="text-gray-400">—</span>`;
         }
 
         const color = PALETTE[
