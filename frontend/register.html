@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SkyAlert — Create Account</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/app/css/custom.css" />
+</head>
+<body class="bg-gray-50 min-h-screen flex items-center justify-center">
+
+  <div class="w-full max-w-md px-4">
+
+    <!-- Logo -->
+    <div class="text-center mb-8">
+      <span class="text-3xl font-bold text-blue-600 tracking-tight">✈ SkyAlert</span>
+      <p class="text-gray-500 text-sm mt-1">Track flight prices. Get alerted when they drop.</p>
+    </div>
+
+    <!-- Card -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 fade-in">
+      <h1 class="text-xl font-semibold text-gray-800 mb-6">Create your account</h1>
+
+      <form id="registerForm" novalidate>
+
+        <!-- Email -->
+        <div class="mb-5">
+          <label for="email" class="block text-sm font-medium text-gray-700 mb-1">
+            Email address
+          </label>
+          <input
+            id="email"
+            type="email"
+            autocomplete="email"
+            placeholder="you@example.com"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <p id="emailError" class="text-red-500 text-xs mt-1 hidden"></p>
+        </div>
+
+        <!-- Phone -->
+        <div class="mb-5">
+          <label for="phone" class="block text-sm font-medium text-gray-700 mb-1">
+            Phone number
+            <span class="text-gray-400 font-normal">(E.164 format, e.g. +12125551234)</span>
+          </label>
+          <input
+            id="phone"
+            type="tel"
+            autocomplete="tel"
+            placeholder="+12125551234"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <p id="phoneError" class="text-red-500 text-xs mt-1 hidden"></p>
+        </div>
+
+        <!-- WhatsApp toggle -->
+        <div class="mb-7 flex items-start gap-3">
+          <button
+            type="button"
+            id="whatsappToggle"
+            role="switch"
+            aria-checked="false"
+            onclick="toggleWhatsApp()"
+            class="mt-0.5 w-10 h-6 rounded-full border-2 border-gray-300 bg-gray-200 relative transition-colors duration-200 flex-shrink-0 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <span
+              id="whatsappThumb"
+              class="block w-4 h-4 bg-white rounded-full shadow absolute top-0.5 left-0.5 transition-transform duration-200"
+            ></span>
+          </button>
+          <div>
+            <p class="text-sm font-medium text-gray-700">WhatsApp alerts</p>
+            <p class="text-xs text-gray-400">Receive price-drop alerts on WhatsApp in addition to email.</p>
+          </div>
+        </div>
+
+        <!-- Submit -->
+        <button
+          type="submit"
+          id="submitBtn"
+          class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg text-sm transition disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Create account
+        </button>
+
+        <!-- API error -->
+        <p id="apiError" class="text-red-500 text-sm mt-3 text-center hidden"></p>
+
+      </form>
+
+      <p class="text-center text-sm text-gray-500 mt-6">
+        Already have an account?
+        <a href="/app/index.html" class="text-blue-600 hover:underline">Go to dashboard</a>
+      </p>
+    </div>
+
+  </div>
+
+  <script type="module">
+    import { createUser } from "/app/js/api.js";
+
+    // ── WhatsApp toggle state ─────────────────────────────────────────────
+    let whatsappEnabled = false;
+
+    window.toggleWhatsApp = function () {
+      whatsappEnabled = !whatsappEnabled;
+      const btn   = document.getElementById("whatsappToggle");
+      const thumb = document.getElementById("whatsappThumb");
+
+      btn.setAttribute("aria-checked", String(whatsappEnabled));
+
+      if (whatsappEnabled) {
+        btn.classList.replace("bg-gray-200", "bg-blue-500");
+        btn.classList.replace("border-gray-300", "border-blue-500");
+        thumb.style.transform = "translateX(16px)";
+      } else {
+        btn.classList.replace("bg-blue-500", "bg-gray-200");
+        btn.classList.replace("border-blue-500", "border-gray-300");
+        thumb.style.transform = "translateX(0)";
+      }
+    };
+
+    // ── Validation helpers ────────────────────────────────────────────────
+    function showError(id, msg) {
+      const el = document.getElementById(id);
+      el.textContent = msg;
+      el.classList.remove("hidden");
+    }
+
+    function clearError(id) {
+      const el = document.getElementById(id);
+      el.textContent = "";
+      el.classList.add("hidden");
+    }
+
+    function validateEmail(email) {
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    }
+
+    function validatePhone(phone) {
+      return /^\+[1-9]\d{7,14}$/.test(phone);
+    }
+
+    // ── Form submit ───────────────────────────────────────────────────────
+    document.getElementById("registerForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const email = document.getElementById("email").value.trim();
+      const phone = document.getElementById("phone").value.trim();
+
+      clearError("emailError");
+      clearError("phoneError");
+      clearError("apiError");
+
+      let valid = true;
+
+      if (!email) {
+        showError("emailError", "Email is required.");
+        valid = false;
+      } else if (!validateEmail(email)) {
+        showError("emailError", "Enter a valid email address.");
+        valid = false;
+      }
+
+      if (!phone) {
+        showError("phoneError", "Phone number is required.");
+        valid = false;
+      } else if (!validatePhone(phone)) {
+        showError("phoneError", "Use E.164 format: +12125551234");
+        valid = false;
+      }
+
+      if (!valid) return;
+
+      const btn = document.getElementById("submitBtn");
+      btn.disabled = true;
+      btn.textContent = "Creating account…";
+
+      try {
+        const user = await createUser({ email, phone, whatsapp_enabled: whatsappEnabled });
+        // Save the user id and email for the rest of the session
+        localStorage.setItem("skyalert_user_id", user.id);
+        localStorage.setItem("skyalert_user_email", user.email);
+        // Redirect to dashboard
+        window.location.href = "/app/index.html";
+      } catch (err) {
+        const msg = err?.detail ?? err?.message ?? "Something went wrong. Please try again.";
+        showError("apiError", msg);
+        btn.disabled = false;
+        btn.textContent = "Create account";
+      }
+    });
+  </script>
+
+</body>
+</html>

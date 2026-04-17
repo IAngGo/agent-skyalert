@@ -13,10 +13,23 @@
   <nav class="bg-white border-b border-gray-200">
     <div class="container mx-auto px-4 py-3 flex items-center justify-between">
       <span class="text-xl font-bold text-blue-600 tracking-tight">✈ SkyAlert</span>
-      <a href="/app/search.html"
-         class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition">
-        + New Search
-      </a>
+      <div class="flex items-center gap-3">
+        <!-- Shown when a user is loaded -->
+        <span id="navUserEmail" class="text-sm text-gray-500 hidden"></span>
+        <button id="navLogout" onclick="logout()"
+                class="text-sm text-gray-400 hover:text-red-500 transition hidden">
+          Sign out
+        </button>
+        <a href="/app/register.html"
+           id="navRegister"
+           class="text-sm text-blue-600 hover:underline hidden">
+          Create account
+        </a>
+        <a href="/app/search.html"
+           class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition">
+          + New Search
+        </a>
+      </div>
     </div>
   </nav>
 
@@ -114,7 +127,7 @@
         return;
       }
 
-      // Save for other pages
+      // Save for other pages (email will be set after first successful load)
       localStorage.setItem("skyalert_user_id", userId);
 
       try {
@@ -220,11 +233,45 @@
       return row;
     }
 
+    /**
+     * Update navbar elements based on whether a user is loaded.
+     * @param {string|null} email
+     */
+    function updateNavbar(email) {
+      const emailEl    = document.getElementById("navUserEmail");
+      const logoutEl   = document.getElementById("navLogout");
+      const registerEl = document.getElementById("navRegister");
+
+      if (email) {
+        emailEl.textContent = email;
+        emailEl.classList.remove("hidden");
+        logoutEl.classList.remove("hidden");
+        registerEl.classList.add("hidden");
+      } else {
+        emailEl.classList.add("hidden");
+        logoutEl.classList.add("hidden");
+        registerEl.classList.remove("hidden");
+      }
+    }
+
+    /** Clear session and reload page. */
+    window.logout = function () {
+      localStorage.removeItem("skyalert_user_id");
+      localStorage.removeItem("skyalert_user_email");
+      location.reload();
+    };
+
     // Auto-load if user ID is saved
-    const saved = localStorage.getItem("skyalert_user_id");
+    const saved      = localStorage.getItem("skyalert_user_id");
+    const savedEmail = localStorage.getItem("skyalert_user_email");
+
+    updateNavbar(savedEmail);
+
     if (saved) {
       document.getElementById("userId").value = saved;
       window.loadDashboard();
+    } else {
+      updateNavbar(null);
     }
   </script>
 
