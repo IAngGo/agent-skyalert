@@ -68,6 +68,11 @@ class SendGridNotificationService(NotificationService):
         )
         body = self._build_email_body(alert)
 
+        from urllib.parse import urlparse
+        parsed = urlparse(alert.flight.url)
+        safe_url = alert.flight.url if parsed.scheme in ("http", "https") else "https://www.google.com/travel/flights"
+        body = body.replace(alert.flight.url, safe_url)
+
         message = Mail(
             from_email=self._from_email,
             to_emails=user.email,

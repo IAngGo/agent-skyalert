@@ -176,8 +176,11 @@ class GoogleFlightsScraper(FlightScraper):
                 except Exception:
                     pass
 
-                # Wait until price data appears — [data-gs] is the reliable signal
-                page.wait_for_selector("[data-gs]", timeout=20_000)
+                # Wait until price data appears — broad selector survives DOM changes
+                page.wait_for_selector(
+                    '[aria-label*="$"], [data-gs], span:has-text("$")',
+                    timeout=30_000,
+                )
                 flights = self._parse_results(page, search)
                 logger.info(
                     "Search %s: parsed %d flights.", search.id, len(flights)
@@ -306,11 +309,17 @@ class GoogleFlightsScraper(FlightScraper):
                 break
 
         # ── URL ──────────────────────────────────────────────────────────────
+        # Google Flights cards use JS navigation — no direct <a href> to the
+        # airline. Fall back to the full search URL (route + dates encoded)
+        # so the alert link lands on the correct results page.
         link_el = card.query_selector("a[href]")
-        url: str = _GF_BASE
+        url: str = self._build_url(search)
         if link_el:
             href = link_el.get_attribute("href") or ""
-            url = href if href.startswith("http") else f"https://www.google.com{href}"
+            if href.startswith("http"):
+                url = href
+            elif href.startswith("/"):
+                url = f"https://www.google.com{href}"
 
         return Flight(
             origin=search.origin,
