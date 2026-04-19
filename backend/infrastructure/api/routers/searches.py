@@ -10,12 +10,13 @@ DELETE /searches/{id}    — deactivate a search
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from backend.application.commands import CreateSearchCommand
 from backend.application.exceptions import SearchNotFoundError
 from backend.application.use_cases.create_search import CreateSearch
+from backend.infrastructure.api.deps import get_current_user
 from backend.infrastructure.api.schemas import (
     CreateSearchRequest,
     PriceHistoryPointResponse,
@@ -42,11 +43,18 @@ def _get_repos(db: Session = Depends(get_db)) -> tuple[PostgresUserRepository, P
     return PostgresUserRepository(db), PostgresSearchRepository(db)
 
 
+def _require_owner(resource_user_id: UUID, current_user_id: UUID) -> None:
+    """Raise 403 if the resource does not belong to the authenticated user."""
+    if resource_user_id != current_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
+
+
 @router.post("/searches", response_model=SearchResponse, status_code=201)
 def create_search(
     body: CreateSearchRequest,
     db: Session = Depends(get_db),
     repos=Depends(_get_repos),
+    current_user_id: UUID = Depends(get_current_user),
 ) -> SearchResponse:
     """
     Create a new flight price monitoring search.
@@ -55,6 +63,7 @@ def create_search(
         body: Validated request body.
         db: SQLAlchemy session for committing.
         repos: Injected (UserRepository, SearchRepository) tuple.
+        current_user_id: UUID from the authenticated JWT.
 
     Returns:
         The created Search as a SearchResponse.
@@ -62,7 +71,7 @@ def create_search(
     users, searches = repos
     use_case = CreateSearch(users=users, searches=searches)
     command = CreateSearchCommand(
-        user_id=body.user_id,
+        user_id=current_user_id,
         origin=body.origin,
         destination=body.destination,
         departure_date=body.departure_date,
@@ -92,6 +101,7 @@ def create_search(
 def get_search(
     search_id: UUID,
     repos=Depends(_get_repos),
+    current_user_id: UUID = Depends(get_current_user),
 ) -> SearchResponse:
     """
     Retrieve a search by UUID.
@@ -99,17 +109,20 @@ def get_search(
     Args:
         search_id: UUID path parameter.
         repos: Injected repository tuple.
+        current_user_id: UUID from the authenticated JWT.
 
     Returns:
         The Search as a SearchResponse.
 
     Raises:
         SearchNotFoundError: If no search exists with the given ID (→ 404).
+        HTTPException 403: If the search does not belong to the current user.
     """
     _, searches = repos
     search = searches.find_by_id(search_id)
     if search is None:
         raise SearchNotFoundError(search_id)
+    _require_owner(search.user_id, current_user_id)
     return SearchResponse(
         id=search.id,
         user_id=search.user_id,
@@ -129,6 +142,7 @@ def get_search(
 def list_user_searches(
     user_id: UUID,
     repos=Depends(_get_repos),
+    current_user_id: UUID = Depends(get_current_user),
 ) -> list[SearchResponse]:
     """
     List all searches belonging to a user.
@@ -136,10 +150,15 @@ def list_user_searches(
     Args:
         user_id: UUID path parameter of the owning user.
         repos: Injected repository tuple.
+        current_user_id: UUID from the authenticated JWT.
 
     Returns:
         List of SearchResponse objects.
+
+    Raises:
+        HTTPException 403: If user_id does not match the authenticated user.
     """
+    _require_owner(user_id, current_user_id)
     _, searches = repos
     results = searches.find_by_user(user_id)
     return [
@@ -169,6 +188,7 @@ def get_price_history(
     days: int | None = Query(default=30, ge=1, description="Restrict to last N days. Omit for all-time."),
     db: Session = Depends(get_db),
     repos=Depends(_get_repos),
+    current_user_id: UUID = Depends(get_current_user),
 ) -> list[PriceHistoryPointResponse]:
     """
     Return the price time series for a search, ordered oldest → newest.
@@ -176,19 +196,22 @@ def get_price_history(
     Args:
         search_id: UUID path parameter.
         days: If provided, only return observations within the last N days (default 30).
-              Pass days=0 or omit to get all-time data.
         db: SQLAlchemy session.
         repos: Injected repository tuple.
+        current_user_id: UUID from the authenticated JWT.
 
     Returns:
         List of price observations suitable for Chart.js.
 
     Raises:
         SearchNotFoundError: If no search exists with the given ID.
+        HTTPException 403: If the search does not belong to the current user.
     """
     _, searches = repos
-    if searches.find_by_id(search_id) is None:
+    search = searches.find_by_id(search_id)
+    if search is None:
         raise SearchNotFoundError(search_id)
+    _require_owner(search.user_id, current_user_id)
 
     since: datetime | None = None
     if days is not None:
@@ -196,7 +219,6 @@ def get_price_history(
 
     ph_repo = PostgresPriceHistoryRepository(db)
     records = ph_repo.find_by_search(search_id, limit=2000, since=since)
-    # find_by_search returns newest-first; reverse for chronological chart order
     records = list(reversed(records))
     return [
         PriceHistoryPointResponse(
@@ -214,6 +236,7 @@ def deactivate_search(
     search_id: UUID,
     db: Session = Depends(get_db),
     repos=Depends(_get_repos),
+    current_user_id: UUID = Depends(get_current_user),
 ) -> None:
     """
     Deactivate a search (soft delete — sets is_active to False).
@@ -222,14 +245,17 @@ def deactivate_search(
         search_id: UUID path parameter.
         db: SQLAlchemy session for committing.
         repos: Injected repository tuple.
+        current_user_id: UUID from the authenticated JWT.
 
     Raises:
         SearchNotFoundError: If no search exists with the given ID (→ 404).
+        HTTPException 403: If the search does not belong to the current user.
     """
     _, searches = repos
     search = searches.find_by_id(search_id)
     if search is None:
         raise SearchNotFoundError(search_id)
+    _require_owner(search.user_id, current_user_id)
     search.is_active = False
     searches.save(search)
     db.commit()

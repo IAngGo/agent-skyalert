@@ -7,15 +7,31 @@
 
 const BASE = "";  // Same origin — FastAPI serves both API and frontend.
 
+// ---------------------------------------------------------------------------
+// Token helpers
+// ---------------------------------------------------------------------------
+
+function getToken() {
+  return localStorage.getItem("skyalert_token");
+}
+
+export function setToken(token) {
+  localStorage.setItem("skyalert_token", token);
+}
+
 /**
  * Internal helper: fetch with JSON body, throw on non-2xx.
+ * Injects Authorization header when a token is stored.
  * @param {string} path
  * @param {RequestInit} options
  * @returns {Promise<any>}
  */
 async function request(path, options = {}) {
+  const token = getToken();
+  const authHeader = token ? { "Authorization": `Bearer ${token}` } : {};
+
   const res = await fetch(BASE + path, {
-    headers: { "Content-Type": "application/json", ...options.headers },
+    headers: { "Content-Type": "application/json", ...authHeader, ...options.headers },
     ...options,
   });
   if (!res.ok) {
@@ -64,7 +80,7 @@ export async function getSearch(searchId) {
 
 /**
  * Create a new flight price monitoring search.
- * @param {object} data  CreateSearchRequest fields
+ * @param {object} data  CreateSearchRequest fields (no user_id — taken from token)
  * @returns {Promise<object>} SearchResponse
  */
 export async function createSearch(data) {
@@ -103,9 +119,9 @@ export async function requestMagicLink(email) {
 }
 
 /**
- * Verify a magic-link token and return user identity.
+ * Verify a magic-link token and return user identity + session token.
  * @param {string} token
- * @returns {Promise<{user_id: string, email: string}>}
+ * @returns {Promise<{user_id: string, email: string, token: string}>}
  */
 export async function verifyMagicLink(token) {
   return request(`/auth/verify?token=${encodeURIComponent(token)}`);
@@ -147,13 +163,12 @@ export async function getAlert(alertId) {
 /**
  * Confirm an alert, optionally triggering automatic purchase.
  * @param {string} alertId
- * @param {string} userId
  * @param {boolean} triggerPurchase
  * @returns {Promise<object>} AlertResponse
  */
-export async function confirmAlert(alertId, userId, triggerPurchase = false) {
+export async function confirmAlert(alertId, triggerPurchase = false) {
   return request(`/alerts/${alertId}/confirm`, {
     method: "POST",
-    body: JSON.stringify({ user_id: userId, trigger_purchase: triggerPurchase }),
+    body: JSON.stringify({ trigger_purchase: triggerPurchase }),
   });
 }

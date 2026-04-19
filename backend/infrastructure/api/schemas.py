@@ -47,7 +47,6 @@ class UserResponse(BaseModel):
 class CreateSearchRequest(BaseModel):
     """Request body for POST /searches."""
 
-    user_id: UUID
     origin: str = Field(..., min_length=3, max_length=3, description="IATA code, e.g. JFK")
     destination: str = Field(..., min_length=3, max_length=3, description="IATA code, e.g. LHR")
     departure_date: date
@@ -120,7 +119,6 @@ class AlertResponse(BaseModel):
 class ConfirmAlertRequest(BaseModel):
     """Request body for POST /alerts/{alert_id}/confirm."""
 
-    user_id: UUID
     trigger_purchase: bool = False
 
 

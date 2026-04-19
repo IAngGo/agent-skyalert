@@ -6,14 +6,15 @@ GET  /users/{user_id} — retrieve a user by ID
 """
 
 from datetime import datetime, timezone
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from backend.application.commands import CreateUserCommand
 from backend.application.use_cases.create_search import CreateSearch
 from backend.domain.entities import User
+from backend.infrastructure.api.deps import get_current_user
 from backend.infrastructure.api.schemas import CreateUserRequest, UserResponse
 from backend.infrastructure.persistence.database import get_db
 from backend.infrastructure.persistence.user_repository import PostgresUserRepository
@@ -73,23 +74,27 @@ def create_user(
 def get_user(
     user_id: str,
     repo: PostgresUserRepository = Depends(_get_user_repo),
+    current_user_id: UUID = Depends(get_current_user),
 ) -> UserResponse:
     """
-    Retrieve a user by UUID.
+    Retrieve a user by UUID. Users can only retrieve their own profile.
 
     Args:
         user_id: String UUID path parameter.
         repo: Injected UserRepository.
+        current_user_id: UUID from the authenticated JWT.
 
     Returns:
         The User as a UserResponse.
 
     Raises:
         UserNotFoundError: If no user exists with the given ID (→ 404).
+        HTTPException 403: If user_id does not match the authenticated user.
     """
-    from uuid import UUID
     from backend.application.exceptions import UserNotFoundError
 
+    if UUID(user_id) != current_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
     user = repo.find_by_id(UUID(user_id))
     if user is None:
         raise UserNotFoundError(user_id)

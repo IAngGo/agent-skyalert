@@ -93,14 +93,6 @@
         </label>
       </div>
 
-      <!-- User ID (pre-filled from localStorage) -->
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Your User ID</label>
-        <input id="userId" type="text" placeholder="Paste your user UUID"
-               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-               required />
-      </div>
-
       <!-- Error -->
       <p id="formError" class="text-red-500 text-sm hidden"></p>
 
@@ -115,10 +107,6 @@
 
   <script type="module">
     import { createSearch } from "/app/js/api.js";
-
-    // Pre-fill user ID from storage
-    const saved = localStorage.getItem("skyalert_user_id");
-    if (saved) document.getElementById("userId").value = saved;
 
     // Show/hide return date based on trip type
     const tripTypeEl = document.getElementById("tripType");
@@ -146,7 +134,6 @@
 
       const tripType = tripTypeEl.value;
       const payload = {
-        user_id:        document.getElementById("userId").value.trim(),
         origin:         document.getElementById("origin").value.trim().toUpperCase(),
         destination:    document.getElementById("destination").value.trim().toUpperCase(),
         departure_date: document.getElementById("departureDate").value,
@@ -157,9 +144,6 @@
         threshold_pct:  parseFloat(document.getElementById("threshold").value),
         auto_purchase:  document.getElementById("autoPurchase").checked,
       };
-
-      // Save user ID for other pages
-      localStorage.setItem("skyalert_user_id", payload.user_id);
 
       try {
         await createSearch(payload);

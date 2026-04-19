@@ -16,8 +16,13 @@ _EXPIRY_MINUTES = 15
 
 
 def _secret() -> str:
-    """Read SECRET_KEY from environment, with an insecure dev fallback."""
-    key = os.getenv("SECRET_KEY", "dev-secret-do-not-use-in-production")
+    """Read SECRET_KEY from environment or raise at startup."""
+    key = os.getenv("SECRET_KEY")
+    if not key:
+        raise RuntimeError(
+            "SECRET_KEY environment variable is required. "
+            "Generate one with: python -c 'import secrets; print(secrets.token_hex(32))'"
+        )
     return key
 
 

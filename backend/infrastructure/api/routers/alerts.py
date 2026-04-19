@@ -8,13 +8,14 @@ POST /alerts/{id}/confirm      — confirm alert and optionally trigger purchase
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from backend.application.commands import ConfirmAlertCommand
-from backend.application.exceptions import AlertNotFoundError
+from backend.application.exceptions import AlertNotFoundError, SearchNotFoundError
 from backend.application.use_cases.confirm_alert import ConfirmAlert
 from backend.domain.entities import Flight
+from backend.infrastructure.api.deps import get_current_user
 from backend.infrastructure.api.schemas import (
     AlertResponse,
     ConfirmAlertRequest,
@@ -24,11 +25,7 @@ from backend.infrastructure.persistence.alert_repository import PostgresAlertRep
 from backend.infrastructure.persistence.database import get_db
 from backend.infrastructure.persistence.search_repository import PostgresSearchRepository
 from backend.infrastructure.persistence.user_repository import PostgresUserRepository
-from backend.infrastructure.scraper.google_flights import GoogleFlightsScraper
-from backend.infrastructure.notifications.composite_service import CompositeNotificationService
-from backend.infrastructure.notifications.sendgrid_service import SendGridNotificationService
-from backend.infrastructure.notifications.twilio_service import TwilioWhatsAppService
-from backend.infrastructure.tasks.scrape_tasks import scrape_search
+from backend.infrastructure.purchases.stub_purchase import StubPurchaseService
 
 router = APIRouter(tags=["alerts"])
 
@@ -57,10 +54,17 @@ def _flight_to_schema(flight: Flight) -> FlightSnapshot:
     )
 
 
+def _require_owner(resource_user_id: UUID, current_user_id: UUID) -> None:
+    """Raise 403 if the resource does not belong to the authenticated user."""
+    if resource_user_id != current_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
+
+
 @router.get("/searches/{search_id}/alerts", response_model=list[AlertResponse])
 def list_search_alerts(
     search_id: UUID,
     db: Session = Depends(get_db),
+    current_user_id: UUID = Depends(get_current_user),
 ) -> list[AlertResponse]:
     """
     List all alerts triggered for a given search.
@@ -68,10 +72,21 @@ def list_search_alerts(
     Args:
         search_id: UUID path parameter of the parent Search.
         db: SQLAlchemy session.
+        current_user_id: UUID from the authenticated JWT.
 
     Returns:
         List of AlertResponse objects, most recent first.
+
+    Raises:
+        SearchNotFoundError: If the search does not exist (→ 404).
+        HTTPException 403: If the search does not belong to the current user.
     """
+    searches = PostgresSearchRepository(db)
+    search = searches.find_by_id(search_id)
+    if search is None:
+        raise SearchNotFoundError(search_id)
+    _require_owner(search.user_id, current_user_id)
+
     repo = PostgresAlertRepository(db)
     alerts = repo.find_by_search(search_id)
     return [
@@ -94,6 +109,7 @@ def list_search_alerts(
 def get_alert(
     alert_id: UUID,
     db: Session = Depends(get_db),
+    current_user_id: UUID = Depends(get_current_user),
 ) -> AlertResponse:
     """
     Retrieve a single alert by UUID.
@@ -101,17 +117,26 @@ def get_alert(
     Args:
         alert_id: UUID path parameter.
         db: SQLAlchemy session.
+        current_user_id: UUID from the authenticated JWT.
 
     Returns:
         The Alert as an AlertResponse.
 
     Raises:
         AlertNotFoundError: If no alert exists with the given ID (→ 404).
+        HTTPException 403: If the alert's search does not belong to the current user.
     """
     repo = PostgresAlertRepository(db)
     alert = repo.find_by_id(alert_id)
     if alert is None:
         raise AlertNotFoundError(alert_id)
+
+    searches = PostgresSearchRepository(db)
+    search = searches.find_by_id(alert.search_id)
+    if search is None:
+        raise SearchNotFoundError(alert.search_id)
+    _require_owner(search.user_id, current_user_id)
+
     return AlertResponse(
         id=alert.id,
         search_id=alert.search_id,
@@ -130,14 +155,16 @@ def confirm_alert(
     alert_id: UUID,
     body: ConfirmAlertRequest,
     db: Session = Depends(get_db),
+    current_user_id: UUID = Depends(get_current_user),
 ) -> AlertResponse:
     """
     Confirm a price-drop alert and optionally trigger automatic purchase.
 
     Args:
         alert_id: UUID path parameter of the Alert to confirm.
-        body: Contains user_id and trigger_purchase flag.
+        body: Contains trigger_purchase flag.
         db: SQLAlchemy session.
+        current_user_id: UUID from the authenticated JWT.
 
     Returns:
         The updated Alert as an AlertResponse.
@@ -146,8 +173,6 @@ def confirm_alert(
         AlertNotFoundError: If no alert exists with the given ID (→ 404).
         ValueError: If alert is not in SENT status or user does not own it (→ 422).
     """
-    from backend.infrastructure.purchases.stub_purchase import StubPurchaseService
-
     alerts = PostgresAlertRepository(db)
     searches = PostgresSearchRepository(db)
     users = PostgresUserRepository(db)
@@ -161,7 +186,7 @@ def confirm_alert(
     )
     command = ConfirmAlertCommand(
         alert_id=alert_id,
-        user_id=body.user_id,
+        user_id=current_user_id,
         trigger_purchase=body.trigger_purchase,
     )
     alert = use_case.execute(command)

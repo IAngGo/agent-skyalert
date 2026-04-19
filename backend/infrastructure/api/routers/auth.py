@@ -36,6 +36,7 @@ class VerifyResponse(BaseModel):
     """Payload returned after successful token verification."""
     user_id: UUID
     email: str
+    token: str
 
 
 def _frontend_base_url() -> str:
@@ -110,4 +111,4 @@ def verify_magic_link(
     users = PostgresUserRepository(db)
     use_case = VerifyMagicLink(users=users)
     user = use_case.execute(VerifyMagicLinkCommand(token=token))
-    return VerifyResponse(user_id=user.id, email=user.email)
+    return VerifyResponse(user_id=user.id, email=user.email, token=token)

@@ -42,7 +42,7 @@
   </div>
 
   <script type="module">
-    import { verifyMagicLink } from "/app/js/api.js";
+    import { verifyMagicLink, setToken } from "/app/js/api.js";
 
     const token = new URLSearchParams(location.search).get("token");
 
@@ -54,9 +54,10 @@
 
     async function verify(token) {
       try {
-        const { user_id, email } = await verifyMagicLink(token);
+        const { user_id, email, token: sessionToken } = await verifyMagicLink(token);
         localStorage.setItem("skyalert_user_id", user_id);
         localStorage.setItem("skyalert_user_email", email);
+        setToken(sessionToken);
         location.replace("/app/index.html");
       } catch {
         showError();
