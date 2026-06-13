@@ -84,6 +84,7 @@ class RunPriceScrape:
                 currency_code=flight.currency_code,
                 scraped_at=datetime.now(timezone.utc),
                 airline=flight.airline,
+                source=flight.source,
             )
             records.append(self._price_history.save(record))
 

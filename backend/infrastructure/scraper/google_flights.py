@@ -351,4 +351,5 @@ class GoogleFlightsScraper(FlightScraper):
             scraped_at=scraped_at,
             duration_minutes=duration_minutes,
             stops=stops,
+            source="google_flights",
         )

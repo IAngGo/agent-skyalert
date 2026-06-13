@@ -81,6 +81,9 @@ class Flight:
         scraped_at: UTC timestamp of when this snapshot was taken.
         duration_minutes: Total flight duration in minutes (layovers included).
         stops: Number of layovers (0 = non-stop).
+        source: Identifier of the scraper that produced this snapshot
+            (e.g. "google_flights", "kayak"). Used to track which price
+            sources contribute to a Search's history.
     """
 
     origin: str
@@ -94,6 +97,7 @@ class Flight:
     scraped_at: datetime
     duration_minutes: int
     stops: int
+    source: str = "google_flights"
 
 
 @dataclass
@@ -150,6 +154,8 @@ class PriceHistory:
         currency_code: ISO 4217 code.
         scraped_at: UTC timestamp of the observation.
         airline: Marketing carrier name for this price point.
+        source: Identifier of the scraper that produced this observation
+            (e.g. "google_flights", "kayak").
     """
 
     id: UUID
@@ -158,6 +164,7 @@ class PriceHistory:
     currency_code: str
     scraped_at: datetime
     airline: str = "Unknown"
+    source: str = "google_flights"
 
 
 @dataclass
