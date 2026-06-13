@@ -52,8 +52,10 @@ class SearchModel(Base):
     auto_purchase: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     user: Mapped["UserModel"] = relationship("UserModel", back_populates="searches")
+    # No delete-orphan: price_history outlives its Search (search_id set to
+    # NULL on delete) so historical prices remain for global analytics.
     price_history: Mapped[list["PriceHistoryModel"]] = relationship(
-        "PriceHistoryModel", back_populates="search", cascade="all, delete-orphan"
+        "PriceHistoryModel", back_populates="search"
     )
     alerts: Mapped[list["AlertModel"]] = relationship(
         "AlertModel", back_populates="search", cascade="all, delete-orphan"
@@ -66,8 +68,10 @@ class PriceHistoryModel(Base):
     __tablename__ = "price_history"
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
-    search_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True), ForeignKey("searches.id", ondelete="CASCADE"), nullable=False
+    # Nullable + SET NULL: the price observation survives deletion of its
+    # parent Search, preserving the historical record for global analytics.
+    search_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("searches.id", ondelete="SET NULL"), nullable=True
     )
     price: Mapped[float] = mapped_column(Float, nullable=False)
     currency_code: Mapped[str] = mapped_column(String(3), nullable=False)

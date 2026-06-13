@@ -138,10 +138,14 @@ class PriceHistory:
     A time-series record of scraped prices for a given Search.
 
     Used to compute the rolling average against which drops are measured.
+    Observations outlive their parent Search: if the Search is deleted,
+    search_id is set to None but the price point remains for historical
+    and global analytics purposes.
 
     Attributes:
         id: Unique identifier (UUID).
-        search_id: References the parent Search.
+        search_id: References the parent Search, or None if that Search
+            has since been deleted.
         price: Scraped fare value.
         currency_code: ISO 4217 code.
         scraped_at: UTC timestamp of the observation.
@@ -149,7 +153,7 @@ class PriceHistory:
     """
 
     id: UUID
-    search_id: UUID
+    search_id: UUID | None
     price: float
     currency_code: str
     scraped_at: datetime
