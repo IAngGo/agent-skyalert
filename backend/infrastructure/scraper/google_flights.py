@@ -33,12 +33,30 @@ _MAX_RESULTS = 10
 # Order matters: more specific names before shorter substrings
 # (e.g. "Copa Airlines" before "Copa" would never match because Google shows "COPA").
 _KNOWN_AIRLINES = [
+    # North America
     "Delta", "United", "American", "Southwest", "JetBlue", "Alaska",
-    "British Airways", "Lufthansa", "Air France", "Emirates", "Qatar Airways",
-    "KLM", "Turkish Airlines", "Iberia", "Virgin Atlantic", "Air Canada",
-    "LATAM", "Aeromexico", "Copa", "Avianca", "Spirit", "Frontier",
-    "Ryanair", "EasyJet", "Wizz Air", "Norwegian", "Finnair", "SAS",
-    "Aer Lingus", "TAP Air Portugal", "Swiss", "Austrian",
+    "Spirit", "Frontier", "Air Canada",
+    # Europe
+    "British Airways", "Lufthansa", "Air France", "KLM", "Turkish Airlines",
+    "Iberia", "Virgin Atlantic", "Ryanair", "EasyJet", "Wizz Air",
+    "Norwegian", "Finnair", "SAS", "Aer Lingus", "TAP Air Portugal",
+    "Swiss", "Austrian",
+    # Latin America
+    "LATAM", "Aeromexico", "Copa", "Avianca", "GOL", "Azul", "Volaris",
+    "Viva Aerobus", "Sky Airline", "JetSMART",
+    # Middle East
+    "Emirates", "Qatar Airways", "Etihad", "Saudia", "Royal Jordanian",
+    "El Al", "Oman Air", "Kuwait Airways", "Gulf Air",
+    # Asia-Pacific
+    "Singapore Airlines", "Cathay Pacific", "China Southern", "China Eastern",
+    "China Airlines", "Air China", "Japan Airlines", "All Nippon Airways",
+    "Korean Air", "Asiana", "EVA Air", "Thai Airways", "Malaysia Airlines",
+    "Garuda Indonesia", "Vietnam Airlines", "Philippine Airlines",
+    "Air India", "IndiGo", "Vistara", "AirAsia", "Jetstar", "Cebu Pacific",
+    "Qantas", "Air New Zealand", "Virgin Australia", "Fiji Airways",
+    # Africa
+    "Ethiopian Airlines", "South African Airways", "Royal Air Maroc",
+    "Kenya Airways", "EgyptAir",
 ]
 
 
