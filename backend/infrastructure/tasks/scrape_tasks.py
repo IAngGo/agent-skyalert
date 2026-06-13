@@ -18,7 +18,9 @@ from backend.infrastructure.persistence.alert_repository import PostgresAlertRep
 from backend.infrastructure.persistence.database import SessionLocal
 from backend.infrastructure.persistence.price_history_repository import PostgresPriceHistoryRepository
 from backend.infrastructure.persistence.search_repository import PostgresSearchRepository
+from backend.infrastructure.scraper.composite import CompositeFlightScraper
 from backend.infrastructure.scraper.google_flights import GoogleFlightsScraper
+from backend.infrastructure.scraper.kayak import KayakScraper
 from backend.infrastructure.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -64,7 +66,7 @@ def scrape_search(search_id: str) -> dict:
         searches = PostgresSearchRepository(session)
         price_history = PostgresPriceHistoryRepository(session)
         alerts = PostgresAlertRepository(session)
-        scraper = GoogleFlightsScraper()
+        scraper = CompositeFlightScraper([GoogleFlightsScraper(), KayakScraper()])
 
         evaluate = EvaluatePriceDrop(
             searches=searches,
